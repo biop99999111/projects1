@@ -95,3 +95,31 @@ def api_parking_list(request):
         {'parking': get_all_parking_simple()},
         json_dumps_params={'ensure_ascii': False},
     )
+
+
+@require_GET
+def api_search_parking_kakao(request):
+    """카카오 로컬 REST API로 반경 500m 이내 주차장(PK6) 검색."""
+    try:
+        lat = float(request.GET.get('lat'))
+        lng = float(request.GET.get('lng'))
+    except (TypeError, ValueError):
+        return JsonResponse({'error': 'lat, lng required'}, status=400)
+
+    rest_key = getattr(settings, 'KAKAO_REST_API_KEY', 'db210bbb1640818e0b3e3fc726869367')
+    base_url = 'https://dapi.kakao.com/v2/local/search/category.json'
+    query = (
+        f'{base_url}?category_group_code=PK6'
+        f'&x={lng}&y={lat}&radius=500&sort=distance&page=1&size=15'
+    )
+    req = urllib.request.Request(query, headers={'Authorization': f'KakaoAK {rest_key}'})
+
+    try:
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = json_module.loads(resp.read().decode('utf-8'))
+    except Exception:
+        return JsonResponse({'documents': []})
+
+    docs = data.get('documents') or []
+    # 그대로 프론트에 전달 (place_name, address_name, road_address_name, x,y,distance 등)
+    return JsonResponse({'documents': docs}, json_dumps_params={'ensure_ascii': False})

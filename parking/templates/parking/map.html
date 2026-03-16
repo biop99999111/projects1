@@ -88,9 +88,10 @@
 <body>
     <div class="app">
         <div class="menu-bar" id="menu-bar">
-            <button type="button" class="menu-bar-item" data-menu="list" title="주차장 리스트 검색">주차장 리스트</button>
+            <button type="button" class="menu-bar-item" data-menu="list" title="공영주차장 리스트 검색">공영주차장 리스트</button>
             <button type="button" class="menu-bar-item active" data-menu="area" title="주차 지역 안내">주차지역 안내</button>
             <button type="button" class="menu-bar-item" data-menu="route" title="실시간 예상 시간 안내">실시간 예상 시간</button>
+            <button type="button" class="menu-bar-item" data-menu="search" title="주변 주차장 검색">주차장 검색</button>
             <button type="button" class="menu-bar-item" data-menu="fee" title="주차요금 계산기">요금 계산기</button>
         </div>
         <div class="nav-wrap" id="nav-wrap">
@@ -122,11 +123,13 @@
         var parkingInfoOverlay = null;
         var routeInfoOverlay = null;  // 마커 위 예상시간 등 경로 안내 오버레이
         var parkingMarkers = [];
+        var searchMarkers = [];
         var allParkingList = [];
         var allParkingLoaded = false;
         var routeLine = null;  // 선택한 공영 주차장까지 경로선
         var enforcementCircle = null; // 단속구역 표시 원
         var currentNearbyParking = [];  // 현재 표시 중인 근처 공영 주차장 목록(전체 필드)
+        var currentSearchParking = [];  // 카카오맵 검색 주차장 목록
         var placeMarkerLat = null;  // 사용자가 찍은 마커 위도
         var placeMarkerLng = null;  // 사용자가 찍은 마커 경도
         var currentMenu = 'area';   // 'list' | 'area' | 'route'
@@ -136,6 +139,7 @@
         var currentSelectedParking = null;  // 요금 계산 등에 사용할 현재 선택 주차장
 
         var markerImageSrc = 'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/category.png';
+        // 카카오 Places JS는 사용하지 않고, 서버에서 REST API를 호출하여 검색합니다.
 
         function createMarkerImage(src, imageSize, imageOptions) {
             return new kakao.maps.MarkerImage(src, imageSize, imageOptions);
@@ -177,6 +181,13 @@
                 routeInfoOverlay.setMap(null);
                 routeInfoOverlay = null;
             }
+        }
+
+        function clearSearchMarkers() {
+            for (var i = 0; i < searchMarkers.length; i++) {
+                searchMarkers[i].setMap(null);
+            }
+            searchMarkers = [];
         }
 
         function clearEnforcementCircle() {
@@ -310,7 +321,7 @@
         function renderListPanel() {
             var nav = document.getElementById('nav-content');
             if (currentMenu !== 'list') return;
-            var html = '<div class="nav-title" style="color:#1976d2;">🅿 주차장 리스트 검색</div>';
+            var html = '<div class="nav-title" style="color:#1976d2;">🅿 공영주차장 리스트 검색</div>';
 
             if (!allParkingLoaded) {
                 html += '<div class="empty-state">전체 공영 주차장 정보를 불러오는 중입니다...</div>';
@@ -579,10 +590,83 @@
             }
         }
 
+        function renderSearchPanel() {
+            var nav = document.getElementById('nav-content');
+            if (currentMenu !== 'search') return;
+
+            var html = '<div class="nav-title" style="color:#1976d2;">🔍 주차장 검색 (카카오맵)</div>';
+
+            if (placeMarkerLat == null || placeMarkerLng == null) {
+                html += '<div class="empty-state">지도를 클릭하면 해당 위치 기준 500m 이내 카카오맵 주차장을 검색합니다.</div>';
+                nav.innerHTML = html;
+                return;
+            }
+
+            if (!currentSearchParking.length) {
+                html += '<div class="empty-state">500m 이내에 검색된 주차장이 없습니다.</div>';
+                nav.innerHTML = html;
+                return;
+            }
+
+            html += '<div class="nav-section"><div class="nav-label">검색 반경 500m 주차장</div><ul class="parking-list">';
+            for (var i = 0; i < currentSearchParking.length; i++) {
+                var p = currentSearchParking[i];
+                html += '<li data-index="' + i + '">';
+                html += esc(p.place_name || '주차장') + ' - ' + esc(p.road_address_name || p.address_name || '');
+                if (p.distance != null) {
+                    html += ' (' + p.distance + 'm)';
+                }
+                html += '</li>';
+            }
+            html += '</ul></div>';
+            html += '<div id="nav-search-detail"></div>';
+
+            nav.innerHTML = html;
+
+            // 검색 주차장 마커 표시
+            showSearchMarkers(currentSearchParking);
+
+            var list = nav.querySelectorAll('.parking-list li');
+            for (var j = 0; j < list.length; j++) {
+                list[j].addEventListener('click', function () {
+                    var idx = parseInt(this.getAttribute('data-index'), 10);
+                    if (isNaN(idx) || idx < 0 || idx >= currentSearchParking.length) return;
+                    var p = currentSearchParking[idx];
+                    var detailEl = document.getElementById('nav-search-detail');
+                    if (!detailEl) return;
+
+                    var h = '<div class="detail-card">';
+                    h += '<div class="detail-head">🅿 ' + esc(p.place_name || '주차장') + '</div>';
+                    h += row('이름', p.place_name);
+                    h += row('도로명 주소', p.road_address_name, true);
+                    h += row('지번 주소', p.address_name, true);
+                    h += row('전화번호', p.phone);
+                    if (p.distance != null) {
+                        h += row('거리', p.distance + ' m');
+                    }
+                    if (p.place_url) {
+                        // 링크는 escape 후 직접 마크업으로 삽입 (row()는 값에 대해 escape 하므로 사용하지 않음)
+                        var safeUrl = esc(p.place_url);
+                        h += '<div class="detail-row"><span class="label">상세보기</span><span class="value wrap"><a href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">카카오맵에서 보기</a></span></div>';
+                    }
+                    h += '</div>';
+                    detailEl.innerHTML = h;
+                    detailEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+                    if (p.y != null && p.x != null) {
+                        var pos = new kakao.maps.LatLng(p.y, p.x);
+                        map.setCenter(pos);
+                        map.setLevel(4);
+                    }
+                });
+            }
+        }
+
         function renderNavByMenu() {
             if (currentMenu === 'list') renderListPanel();
             else if (currentMenu === 'route') renderRouteGuidePanel();
             else if (currentMenu === 'fee') renderFeeCalculatorPanel();
+            else if (currentMenu === 'search') renderSearchPanel();
             else if (currentMenu === 'area' && lastAreaData) {
                 var d = lastAreaData;
                 updateNavBar(d.isEnforcement, d.cctv, d.nearbyParking, placeMarkerLat, placeMarkerLng);
@@ -664,11 +748,42 @@
             }
         }
 
+        function showSearchMarkers(searchArray) {
+            clearSearchMarkers();
+            if (!searchArray || searchArray.length === 0) return;
+
+            // 검색 주차장은 카카오 예제의 파란 마커 이미지로 표시
+            var imageSrc = 'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_blue.png';
+            var imageSize = new kakao.maps.Size(24, 35);
+            var searchMarkerImage = new kakao.maps.MarkerImage(imageSrc, imageSize);
+
+            for (var i = 0; i < searchArray.length; i++) {
+                var p = searchArray[i];
+                if (p.y == null || p.x == null) continue;
+                var lat = parseFloat(p.y);
+                var lng = parseFloat(p.x);
+                if (isNaN(lat) || isNaN(lng)) continue;
+
+                var pos = new kakao.maps.LatLng(lat, lng);
+                var marker = new kakao.maps.Marker({
+                    position: pos,
+                    image: searchMarkerImage,
+                    zIndex: 5
+                });
+                var title = (p.place_name || '주차장');
+                if (p.distance != null) title += ' (' + p.distance + 'm)';
+                marker.setTitle(title);
+                marker.setMap(map);
+                searchMarkers.push(marker);
+            }
+        }
+
         function placeMarkerAndCheck(lat, lng) {
             hideOverlay();
             hideParkingInfoOverlay();
             clearRouteLine();
             clearParkingMarkers();
+            clearSearchMarkers();
             clearEnforcementCircle();
             if (currentMarker) { currentMarker.setMap(null); currentMarker = null; }
             var pos = new kakao.maps.LatLng(lat, lng);
@@ -711,6 +826,25 @@
                     showParkingMarkers(data.nearby_parking || []);
                     placeMarkerLat = lat;
                     placeMarkerLng = lng;
+                    // 서버를 통해 카카오 로컬 REST API로 주차장(PK6) 검색 (반경 500m)
+                    fetch('/api/search-parking/?lat=' + lat + '&lng=' + lng)
+                        .then(function (res) { return res.json(); })
+                        .then(function (data) {
+                            currentSearchParking = data.documents || [];
+                            // 검색 결과를 지도 마커로 항상 표시
+                            showSearchMarkers(currentSearchParking);
+                            // 현재 탭이 주차장 검색이면 패널도 갱신
+                            if (currentMenu === 'search') {
+                                renderSearchPanel();
+                            }
+                        })
+                        .catch(function () {
+                            currentSearchParking = [];
+                            clearSearchMarkers();
+                            if (currentMenu === 'search') {
+                                renderSearchPanel();
+                            }
+                        });
                     if (data.nearby_parking && data.nearby_parking.length > 0) {
                         drawRouteToNearest(lat, lng, data.nearby_parking[0]);
                     }
@@ -736,6 +870,13 @@
             currentMenu = menu;
             document.querySelectorAll('.menu-bar-item').forEach(function(b) { b.classList.remove('active'); });
             btn.classList.add('active');
+
+            // 내비게이션 바가 닫혀 있으면 다시 열기
+            var wrap = document.getElementById('nav-wrap');
+            if (wrap.classList.contains('closed')) {
+                wrap.classList.remove('closed');
+            }
+
             renderNavByMenu();
         });
 
