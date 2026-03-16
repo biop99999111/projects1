@@ -126,6 +126,7 @@
         var allParkingList = [];
         var allParkingLoaded = false;
         var routeLine = null;  // 선택한 공영 주차장까지 경로선
+        var enforcementCircle = null; // 단속구역 표시 원
         var currentNearbyParking = [];  // 현재 표시 중인 근처 공영 주차장 목록(전체 필드)
         var placeMarkerLat = null;  // 사용자가 찍은 마커 위도
         var placeMarkerLng = null;  // 사용자가 찍은 마커 경도
@@ -176,6 +177,13 @@
             if (routeInfoOverlay) {
                 routeInfoOverlay.setMap(null);
                 routeInfoOverlay = null;
+            }
+        }
+
+        function clearEnforcementCircle() {
+            if (enforcementCircle) {
+                enforcementCircle.setMap(null);
+                enforcementCircle = null;
             }
         }
 
@@ -662,6 +670,7 @@
             hideParkingInfoOverlay();
             clearRouteLine();
             clearParkingMarkers();
+            clearEnforcementCircle();
             if (currentMarker) { currentMarker.setMap(null); currentMarker = null; }
             var pos = new kakao.maps.LatLng(lat, lng);
             var marker = new kakao.maps.Marker({ position: pos });
@@ -673,6 +682,7 @@
                 .then(function(res) { return res.json(); })
                 .then(function(data) {
                     var isEnforcement = data.is_enforcement === true;
+                    clearEnforcementCircle();
                     if (isEnforcement) {
                         marker.setMap(null);
                         var redMarker = new kakao.maps.Marker({ position: pos });
@@ -683,6 +693,20 @@
                         } catch (e) {}
                         redMarker.setMap(map);
                         currentMarker = redMarker;
+
+                        if (data.cctv && data.cctv.lat != null && data.cctv.lng != null) {
+                            enforcementCircle = new kakao.maps.Circle({
+                                center: new kakao.maps.LatLng(data.cctv.lat, data.cctv.lng),
+                                radius: 300, // 300m
+                                strokeWeight: 2,
+                                strokeColor: '#ff0000',
+                                strokeOpacity: 0.8,
+                                strokeStyle: 'solid',
+                                fillColor: '#ff0000',
+                                fillOpacity: 0.15
+                            });
+                            enforcementCircle.setMap(map);
+                        }
                     }
                     updateNavBar(isEnforcement, data.cctv || null, data.nearby_parking || [], lat, lng);
                     showParkingMarkers(data.nearby_parking || []);
