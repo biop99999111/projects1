@@ -80,18 +80,6 @@ def get_parking_rows():
     # 9평일시작 10평일종료 11토시작 12토종료 13공휴시작 14공휴종료
     # 15요금정보 16기본시간 17기본요금 18추가단위시간 19추가단위요금
     # 20일권적용시간 21일권요금 22월정기권 23전화 24위도 25경도 26장애인
-    def get_all_parking_simple():
-        """검색용 전체 공영 주차장 리스트 (거리 계산 없음)."""
-        return [
-            {
-                'name': p['name'],
-                'address': p.get('address') or p.get('address_jibun') or p.get('address_road', ''),
-                'fee': p.get('fee', ''),
-                'lat': p['lat'],
-                'lng': p['lng'],
-            }
-            for p in get_parking_rows()
-        ]
     def _cell(row, i, default=''):
         return row[i].strip() if len(row) > i else default
 
@@ -133,6 +121,21 @@ def get_parking_rows():
         except (ValueError, IndexError):
             continue
     return out
+
+
+def get_all_parking_simple():
+    """검색용 전체 공영 주차장 리스트 (거리 계산 없음)."""
+    parking_list = get_parking_rows()
+    return [
+        {
+            'name': p['name'],
+            'address': p.get('address') or p.get('address_jibun') or p.get('address_road', ''),
+            'fee': p.get('fee', ''),
+            'lat': p['lat'],
+            'lng': p['lng'],
+        }
+        for p in parking_list
+    ]
 
 
 def check_enforcement(lat, lng):

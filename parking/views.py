@@ -5,7 +5,6 @@ from django.conf import settings
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 from .data_loader import check_enforcement, get_nearby_parking, get_all_parking_simple
-from .data_loader import check_enforcement, get_nearby_parking
 
 
 def map_view(request):
