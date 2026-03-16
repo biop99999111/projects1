@@ -4,7 +4,7 @@ from django.shortcuts import render
 from django.conf import settings
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
-
+from .data_loader import check_enforcement, get_nearby_parking, get_all_parking_simple
 from .data_loader import check_enforcement, get_nearby_parking
 
 
@@ -58,3 +58,11 @@ def api_route(request):
             path.append([lat, lon])
         duration_seconds = route.get('duration')
     return JsonResponse({'path': path, 'duration_seconds': duration_seconds})
+
+@require_GET
+def api_parking_list(request):
+    """전체 공영 주차장 CSV 검색용 리스트."""
+    return JsonResponse(
+        {'parking': get_all_parking_simple()},
+        json_dumps_params={'ensure_ascii': False},
+    )

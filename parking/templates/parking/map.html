@@ -8,6 +8,19 @@
         * { box-sizing: border-box; }
         body { margin: 0; font-family: 'Malgun Gothic', sans-serif; }
         .app { display: flex; height: 100vh; overflow: hidden; }
+        .menu-bar {
+            width: 52px; min-width: 52px; height: 100vh;
+            background: #e9ecef; border-right: 1px solid #dee2e6;
+            display: flex; flex-direction: column; padding: 8px 0; gap: 4px;
+        }
+        .menu-bar-item {
+            writing-mode: vertical-rl; text-orientation: mixed;
+    width: 100%; min-height: 48px; padding: 10px 6px;
+            border: none; background: transparent; color: #495057; font-size: 12px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; word-break: keep-all;
+        }
+        .menu-bar-item:hover { background: #dee2e6; }
+        .menu-bar-item.active { background: #1976d2; color: #fff; font-weight: bold; }
         .nav-wrap {
             position: relative; height: 100vh; flex-shrink: 0;
             width: 420px; min-width: 280px; max-width: 720px;
@@ -75,6 +88,11 @@
 </head>
 <body>
     <div class="app">
+        <div class="menu-bar" id="menu-bar">
+            <button type="button" class="menu-bar-item" data-menu="list" title="주차장 리스트 검색">주차장 리스트</button>
+            <button type="button" class="menu-bar-item active" data-menu="area" title="주차가능/불가능 지역 안내">주차가능·불가 안내</button>
+            <button type="button" class="menu-bar-item" data-menu="route" title="경로 안내">경로 안내</button>
+        </div>
         <div class="nav-wrap" id="nav-wrap">
             <button type="button" class="nav-close" id="nav-close" title="닫기">✕</button>
             <div class="nav-resize" id="nav-resize" title="드래그하여 너비 조절"></div>
@@ -102,11 +120,16 @@
         var currentMarker = null;
         var currentOverlay = null;
         var parkingInfoOverlay = null;
+        var routeInfoOverlay = null;  // 마커 위 예상시간 등 경로 안내 오버레이
         var parkingMarkers = [];
         var routeLine = null;  // 선택한 공영 주차장까지 경로선
         var currentNearbyParking = [];  // 현재 표시 중인 근처 공영 주차장 목록(전체 필드)
         var placeMarkerLat = null;  // 사용자가 찍은 마커 위도
         var placeMarkerLng = null;  // 사용자가 찍은 마커 경도
+        var currentMenu = 'area';   // 'list' | 'area' | 'route'
+        var lastRouteParking = null;
+        var lastRouteDurationSeconds = null;
+        var lastAreaData = null;    // { isEnforcement, cctv, nearbyParking } for area panel
 
         var markerImageSrc = 'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/category.png';
 
@@ -145,6 +168,10 @@
             if (routeLine) {
                 routeLine.setMap(null);
                 routeLine = null;
+            }
+            if (routeInfoOverlay) {
+                routeInfoOverlay.setMap(null);
+                routeInfoOverlay = null;
             }
         }
 
@@ -219,7 +246,104 @@
                 html += '</ul></div>';
                 html += '<div id="nav-detail-card">' + buildNearestDetailCard(nearbyParking[0]) + '</div>';
             }
+            lastAreaData = { isEnforcement: isEnforcement, cctv: cctv, nearbyParking: nearbyParking || [] };
+            if (currentMenu === 'area') nav.innerHTML = html;
+            else if (currentMenu === 'list') renderListPanel();
+        }
+
+        function showRouteInfoOnMarker(targetParking) {
+    // 지도 위에 경로/주차장 정보창을 표시하지 않습니다.
+    if (routeInfoOverlay) {
+        routeInfoOverlay.setMap(null);
+        routeInfoOverlay = null;
+    }
+}
+
+        function renderRouteGuidePanel() {
+            var nav = document.getElementById('nav-content');
+            if (currentMenu !== 'route') return;
+            var html = '<div class="nav-title" style="color:#1976d2;">🛣 경로 안내</div>';
+            if (!lastRouteParking) {
+                html += '<div class="empty-state">주차장을 선택하면 경로와 자동차 이동 예상시간이 여기에 표시됩니다.</div>';
+            } else {
+                html += '<div class="detail-card">';
+                html += '<div class="detail-head">' + (lastRouteParking.name || '공영주차장') + '</div>';
+                html += '<div class="detail-row"><span class="label">거리</span><span class="value">' + lastRouteParking.distance_km + ' km</span></div>';
+                if (lastRouteDurationSeconds != null && lastRouteDurationSeconds > 0) {
+                    var min = Math.round(lastRouteDurationSeconds / 60);
+                    html += '<div class="detail-row"><span class="label">자동차 이동 예상시간</span><span class="value"><strong>약 ' + min + '분</strong></span></div>';
+                } else {
+                    html += '<div class="detail-row"><span class="label">경로</span><span class="value">직선 경로 표시</span></div>';
+                }
+                html += '</div>';
+            }
             nav.innerHTML = html;
+        }
+
+        function renderListPanel() {
+            var nav = document.getElementById('nav-content');
+    if (currentMenu !== 'list') return;
+    var html = '<div class="nav-title" style="color:#1976d2;">🅿 주차장 리스트 검색</div>';
+    if (!currentNearbyParking.length) {
+        html += '<div class="empty-state">지도를 클릭하면 근처 500m 공영 주차장 목록이 표시됩니다.</div>';
+    } else {
+        // ✅ 검색 입력창 추가
+        html += '<div class="nav-section">';
+        html += '  <div class="nav-label">주차장 이름/주소 검색</div>';
+        html += '  <input id="parking-search" type="text" placeholder="이름, 주소로 검색" ';
+        html += '         style="width:100%;padding:6px 8px;font-size:12px;border:1px solid #ced4da;border-radius:4px;box-sizing:border-box;" />';
+        html += '</div>';
+        html += '<div class="nav-section"><div class="nav-label">근처 500m 이내 공영 주차장</div><ul class="parking-list">';
+        for (var i = 0; i < currentNearbyParking.length; i++) {
+            var p = currentNearbyParking[i];
+            html += '<li data-index="' + i + '" data-lat="' + p.lat + '" data-lng="' + p.lng + '" data-name="' + (p.name || '').replace(/"/g, '&quot;') + '" data-fee="' + (p.fee || '').replace(/"/g, '&quot;') + '" data-addr="' + (p.address || '').replace(/"/g, '&quot;') + '" data-dist="' + p.distance_km + '">';
+            html += (p.name || '주차장') + ' (' + p.distance_km + 'km) - ' + (p.fee || '') + '</li>';
+        }
+        html += '</ul></div><div id="nav-detail-card">' + (currentNearbyParking[0] ? buildNearestDetailCard(currentNearbyParking[0]) : '') + '</div>';
+    }
+        nav.innerHTML = html;
+    if (currentNearbyParking.length > 0) {
+        // ✅ 검색 입력 이벤트
+        var searchInput = document.getElementById('parking-search');
+        if (searchInput) {
+            searchInput.addEventListener('input', function () {
+                var q = this.value.toLowerCase();
+                var items = nav.querySelectorAll('.parking-list li');
+                items.forEach(function (li) {
+                    var name = (li.dataset.name || '').toLowerCase();
+                    var addr = (li.dataset.addr || '').toLowerCase();
+                    var text = li.textContent.toLowerCase();
+                    var match = !q || name.indexOf(q) !== -1 || addr.indexOf(q) !== -1 || text.indexOf(q) !== -1;
+                    li.style.display = match ? '' : 'none';
+                });
+            });
+        }
+        // ✅ 항목 클릭 시 상세/경로 유지
+        var list = nav.querySelectorAll('.parking-list li');
+        for (var i = 0; i < list.length; i++) {
+            list[i].addEventListener('click', function () {
+                var idx = parseInt(this.getAttribute('data-index'), 10);
+                var park = currentNearbyParking[idx];
+                if (park) {
+                    updateDetailCard(park);
+                    if (placeMarkerLat != null && placeMarkerLng != null) {
+                        drawRouteToNearest(placeMarkerLat, placeMarkerLng, park);
+                    }
+                }
+            });
+        }
+    }
+}
+
+        function renderNavByMenu() {
+            if (currentMenu === 'list') renderListPanel();
+            else if (currentMenu === 'route') renderRouteGuidePanel();
+            else if (currentMenu === 'area' && lastAreaData) {
+                var d = lastAreaData;
+                updateNavBar(d.isEnforcement, d.cctv, d.nearbyParking, placeMarkerLat, placeMarkerLng);
+            } else if (currentMenu === 'area') {
+                document.getElementById('nav-content').innerHTML = '<div class="empty-state">지도를 클릭하면 해당 위치의 단속 여부와 근처 공영 주차장을 안내합니다.</div>';
+            }
         }
 
         function drawRouteToNearest(startLat, startLng, targetParking) {
@@ -240,45 +364,28 @@
                     strokeStyle: 'solid'
                 });
                 routeLine.setMap(map);
-                var durationSec = data.duration_seconds;
-                var durationText = '';
-                if (durationSec != null && durationSec > 0) {
-                    var min = Math.round(durationSec / 60);
-                    durationText = ' 자동차 이동 예상시간: <strong>약 ' + min + '분</strong>';
-                }
-                var nav = document.getElementById('nav-content');
-                var routeDiv = document.createElement('div');
-                routeDiv.className = 'route-info';
-                routeDiv.innerHTML = '🛣 <strong>' + (targetParking.name || '공영주차장') + '</strong> (' + targetParking.distance_km + 'km) 까지 도로 경로' + durationText + '.';
-                if (nav.querySelector('.route-info')) nav.removeChild(nav.querySelector('.route-info'));
-                nav.appendChild(routeDiv);
+                lastRouteParking = targetParking;
+                lastRouteDurationSeconds = data.duration_seconds;
+                showRouteInfoOnMarker(targetParking);
+                if (currentMenu === 'route') renderRouteGuidePanel();
             }).catch(function() {
                 var path = [new kakao.maps.LatLng(startLat, startLng), new kakao.maps.LatLng(targetParking.lat, targetParking.lng)];
                 routeLine = new kakao.maps.Polyline({ path: path, strokeWeight: 5, strokeColor: '#1976d2', strokeOpacity: 0.7 });
                 routeLine.setMap(map);
-                var nav = document.getElementById('nav-content');
-                var routeDiv = document.createElement('div');
-                routeDiv.className = 'route-info';
-                routeDiv.innerHTML = '🛣 <strong>' + (targetParking.name || '공영주차장') + '</strong> (' + targetParking.distance_km + 'km) 까지 직선 경로 표시.';
-                if (nav.querySelector('.route-info')) nav.removeChild(nav.querySelector('.route-info'));
-                nav.appendChild(routeDiv);
+                lastRouteParking = targetParking;
+                lastRouteDurationSeconds = null;
+                showRouteInfoOnMarker(targetParking);
+                if (currentMenu === 'route') renderRouteGuidePanel();
             });
         }
 
-        function showParkingInfoBlue(park, position) {
-            hideParkingInfoOverlay();
-            var html = '<div class="info-content box-parking" style="padding:8px;font-size:12px;">' +
-                '<div class="info-title" style="color:#1976d2;">🅿 공영 주차장</div>' +
-                '<strong>' + (park.name || '공영주차장') + '</strong><br>' +
-                '거리: ' + park.distance_km + 'km · ' + (park.fee || '') + '<br>' +
-                (park.address ? park.address : '') + '</div>';
-            parkingInfoOverlay = new kakao.maps.CustomOverlay({
-                content: html,
-                position: position,
-                yAnchor: 1.2
-            });
-            parkingInfoOverlay.setMap(map);
-        }
+     function showParkingInfoBlue(park, position) {
+    // 지도 위에 주차장 상세정보 창을 표시하지 않습니다.
+    if (parkingInfoOverlay) {
+        parkingInfoOverlay.setMap(null);
+        parkingInfoOverlay = null;
+    }
+}
 
         function showParkingMarkers(nearbyParking) {
             clearParkingMarkers();
@@ -299,7 +406,6 @@
                 (function(m, park) {
                     kakao.maps.event.addListener(m, 'click', function() {
                         hideOverlay();
-                        showParkingInfoBlue(park, m.getPosition());
                         updateDetailCard(park);
                         if (placeMarkerLat != null && placeMarkerLng != null) {
                             drawRouteToNearest(placeMarkerLat, placeMarkerLng, park);
@@ -357,13 +463,23 @@
             placeMarkerAndCheck(latlng.getLat(), latlng.getLng());
         });
 
+        document.getElementById('menu-bar').addEventListener('click', function(e) {
+            var btn = e.target.closest('.menu-bar-item');
+            if (!btn) return;
+            var menu = btn.getAttribute('data-menu');
+            if (!menu) return;
+            currentMenu = menu;
+            document.querySelectorAll('.menu-bar-item').forEach(function(b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            renderNavByMenu();
+        });
+
         document.getElementById('nav-bar').addEventListener('click', function(e) {
             var li = e.target.closest('.parking-list li');
             if (!li) return;
             var idx = parseInt(li.getAttribute('data-index'), 10);
             if (isNaN(idx) || idx < 0 || idx >= currentNearbyParking.length) return;
             var park = currentNearbyParking[idx];
-            showParkingInfoBlue(park, new kakao.maps.LatLng(park.lat, park.lng));
             updateDetailCard(park);
             if (placeMarkerLat != null && placeMarkerLng != null) {
                 drawRouteToNearest(placeMarkerLat, placeMarkerLng, park);
