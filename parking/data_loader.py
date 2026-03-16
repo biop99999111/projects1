@@ -76,23 +76,47 @@ def get_parking_rows():
     path = base / 'Go-yang-si_parking_lot.csv'
     raw = _load_csv(str(path))
     out = []
-    # 헤더: ... 전화번호(23), 위도(24), 경도(25), 장애인(26)
+    # CSV 컬럼: 0번호 1아이디 2주차장명 3구분 4유형 5도로명 6지번 7구획수 8운영요일
+    # 9평일시작 10평일종료 11토시작 12토종료 13공휴시작 14공휴종료
+    # 15요금정보 16기본시간 17기본요금 18추가단위시간 19추가단위요금
+    # 20일권적용시간 21일권요금 22월정기권 23전화 24위도 25경도 26장애인
+    def _cell(row, i, default=''):
+        return row[i].strip() if len(row) > i else default
+
     for row in raw:
         if len(row) < 26:
             continue
         try:
             lat = float(row[24].strip())
             lng = float(row[25].strip())
-            name = row[2].strip() if len(row) > 2 else ''
-            address = row[6].strip() if len(row) > 6 else (row[5].strip() if len(row) > 5 else '')
-            # 요금정보(15), 주차기본시간(16), 주차기본요금(17)
-            fee = row[15].strip() if len(row) > 15 else ''
+            addr_j = _cell(row, 6)
+            addr_r = _cell(row, 5)
             out.append({
-                'name': name,
-                'address': address,
-                'fee': fee,
+                'name': _cell(row, 2),
+                'address': addr_j or addr_r,
+                'parking_type': _cell(row, 4),      # 노외/부설/노상
+                'address_road': addr_r,
+                'address_jibun': addr_j,
+                'capacity': _cell(row, 7),          # 주차구획수
+                'operating_days': _cell(row, 8),    # 운영요일
+                'weekday_start': _cell(row, 9),
+                'weekday_end': _cell(row, 10),
+                'saturday_start': _cell(row, 11),
+                'saturday_end': _cell(row, 12),
+                'holiday_start': _cell(row, 13),
+                'holiday_end': _cell(row, 14),
+                'fee': _cell(row, 15),              # 요금정보
+                'base_minutes': _cell(row, 16),
+                'base_fee': _cell(row, 17),
+                'extra_unit_minutes': _cell(row, 18),
+                'extra_unit_fee': _cell(row, 19),
+                'day_pass_hours': _cell(row, 20),
+                'day_pass_fee': _cell(row, 21),
+                'monthly_fee': _cell(row, 22),
+                'phone': _cell(row, 23),
                 'lat': lat,
                 'lng': lng,
+                'disabled_space': _cell(row, 26),   # Y/N
             })
         except (ValueError, IndexError):
             continue

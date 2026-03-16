@@ -1,3 +1,5 @@
+import urllib.request
+import json as json_module
 from django.shortcuts import render
 from django.conf import settings
 from django.http import JsonResponse
@@ -24,3 +26,35 @@ def api_check_location(request):
     info = check_enforcement(lat, lng)
     info['nearby_parking'] = get_nearby_parking(lat, lng, radius_km=0.5)
     return JsonResponse(info, json_dumps_params={'ensure_ascii': False})
+
+
+@require_GET
+def api_route(request):
+    """출발·도착 위경도로 도로 경로 좌표 반환 (OSRM 드라이빙)."""
+    try:
+        start_lat = float(request.GET.get('start_lat'))
+        start_lng = float(request.GET.get('start_lng'))
+        end_lat = float(request.GET.get('end_lat'))
+        end_lng = float(request.GET.get('end_lng'))
+    except (TypeError, ValueError, KeyError):
+        return JsonResponse({'error': 'start_lat, start_lng, end_lat, end_lng required'}, status=400)
+    # OSRM: coordinates are lon,lat
+    url = (
+        'https://router.project-osrm.org/route/v1/driving/'
+        f'{start_lng},{start_lat};{end_lng},{end_lat}'
+        '?overview=full&geometries=geojson'
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            data = json_module.loads(resp.read().decode())
+    except Exception:
+        return JsonResponse({'path': []})
+    path = []
+    duration_seconds = None
+    if data.get('code') == 'Ok' and data.get('routes'):
+        route = data['routes'][0]
+        coords = route.get('geometry', {}).get('coordinates', [])
+        for lon, lat in coords:
+            path.append([lat, lon])
+        duration_seconds = route.get('duration')
+    return JsonResponse({'path': path, 'duration_seconds': duration_seconds})
