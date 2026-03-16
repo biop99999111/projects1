@@ -697,7 +697,7 @@
                         if (data.cctv && data.cctv.lat != null && data.cctv.lng != null) {
                             enforcementCircle = new kakao.maps.Circle({
                                 center: new kakao.maps.LatLng(data.cctv.lat, data.cctv.lng),
-                                radius: 300, // 300m
+                                radius: 100, // 100m
                                 strokeWeight: 2,
                                 strokeColor: '#ff0000',
                                 strokeOpacity: 0.8,
