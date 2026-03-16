@@ -76,13 +76,13 @@ def get_parking_rows():
     path = base / 'Go-yang-si_parking_lot.csv'
     raw = _load_csv(str(path))
     out = []
-    # 헤더: ... 전화번호,위도,경도,장애인...
+    # 헤더: ... 전화번호(23), 위도(24), 경도(25), 장애인(26)
     for row in raw:
-        if len(row) < 27:
+        if len(row) < 26:
             continue
         try:
-            lat = float(row[25].strip())
-            lng = float(row[26].strip())
+            lat = float(row[24].strip())
+            lng = float(row[25].strip())
             name = row[2].strip() if len(row) > 2 else ''
             address = row[6].strip() if len(row) > 6 else (row[5].strip() if len(row) > 5 else '')
             fee = row[16].strip() if len(row) > 16 else ''

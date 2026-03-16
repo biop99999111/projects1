@@ -12,8 +12,9 @@
         .info-enforcement { color: #c00; }
         .info-safe { color: #080; }
         .info-content { font-size: 12px; line-height: 1.5; }
-        .info-content.box-enforcement { background: #ffebeb; border: 2px solid #c00; }
-        .info-content.box-safe { background: #e8f5e9; border: 2px solid #080; }
+        .info-content.box-enforcement { background: #ffebeb; border: 2px solid #c00; min-width: 220px; }
+        .info-content.box-safe { background: #e8f5e9; border: 2px solid #080; min-width: 220px; }
+        .info-content.box-parking { background: #e3f2fd; border: 2px solid #1976d2; min-width: 160px; }
         .parking-list { margin-top: 10px; max-height: 180px; overflow-y: auto; }
         .parking-item { padding: 6px 0; border-bottom: 1px solid #eee; font-size: 11px; }
         .parking-item:last-child { border-bottom: none; }
@@ -33,6 +34,8 @@
 
         var currentMarker = null;
         var currentOverlay = null;
+        var parkingInfoOverlay = null;  // 공영 주차장 클릭 시 파란색 정보창
+        var parkingMarkers = [];  // 근처 주차장 마커들
 
         // 벌금 안내 문구 (불법 주차 단속 기준)
         var FINE_INFO = '불법 주차 과태료: 40,000원 (승차자 하차 후 즉시 출발 20,000원). 장애인 전용 주차구역 위반 등 추가 과태료가 부과될 수 있습니다.';
@@ -41,6 +44,57 @@
             if (currentOverlay) {
                 currentOverlay.setMap(null);
                 currentOverlay = null;
+            }
+        }
+
+        function hideParkingInfoOverlay() {
+            if (parkingInfoOverlay) {
+                parkingInfoOverlay.setMap(null);
+                parkingInfoOverlay = null;
+            }
+        }
+
+        function clearParkingMarkers() {
+            for (var i = 0; i < parkingMarkers.length; i++) {
+                parkingMarkers[i].setMap(null);
+            }
+            parkingMarkers = [];
+        }
+
+        function showParkingInfoBlue(park, position) {
+            hideParkingInfoOverlay();
+            var html = '<div class="info-content box-parking" style="padding:8px;font-size:12px;">' +
+                '<div class="info-title" style="color:#1976d2;">🅿 공영 주차장</div>' +
+                '<strong>' + (park.name || '공영주차장') + '</strong><br>' +
+                '거리: ' + park.distance_km + 'km · ' + (park.fee || '') + '<br>' +
+                (park.address ? park.address : '') + '</div>';
+            parkingInfoOverlay = new kakao.maps.CustomOverlay({
+                content: html,
+                position: position,
+                yAnchor: 1.2
+            });
+            parkingInfoOverlay.setMap(map);
+        }
+
+        function showParkingMarkers(nearbyParking) {
+            clearParkingMarkers();
+            if (!nearbyParking || nearbyParking.length === 0) return;
+            for (var i = 0; i < nearbyParking.length; i++) {
+                var p = nearbyParking[i];
+                var pos = new kakao.maps.LatLng(p.lat, p.lng);
+                var marker = new kakao.maps.Marker({
+                    position: pos,
+                    title: (p.name || '공영주차장') + ' (' + p.distance_km + 'km)'
+                });
+                marker.setMap(map);
+                parkingMarkers.push(marker);
+                (function(m, park) {
+                    kakao.maps.event.addListener(m, 'click', function() {
+                        if (currentMarker) { currentMarker.setMap(null); currentMarker = null; }
+                        hideOverlay();
+                        showParkingInfoBlue(park, m.getPosition());
+                    });
+                })(marker, p);
             }
         }
 
@@ -80,6 +134,7 @@
         }
 
         function placeMarkerAndCheck(lat, lng) {
+            clearParkingMarkers();
             if (currentMarker) currentMarker.setMap(null);
             var pos = new kakao.maps.LatLng(lat, lng);
             var marker = new kakao.maps.Marker({ position: pos });
@@ -104,9 +159,11 @@
                         currentMarker = redMarker;
                     }
                     showInfoWindow(pos, isEnforcement, data.cctv || null, data.nearby_parking || []);
+                    showParkingMarkers(data.nearby_parking || []);
                 })
                 .catch(function() {
                     showInfoWindow(pos, false, null, []);
+                    showParkingMarkers([]);
                 });
         }
 
