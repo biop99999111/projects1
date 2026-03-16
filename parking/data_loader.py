@@ -12,8 +12,8 @@ GOYANG_CENTER = (37.6584, 126.8320)
 # 단속 구역 판정: 클릭 좌표와 이 거리(km) 이내면 단속 구역으로 간주
 ENFORCEMENT_RADIUS_KM = 0.05  # 약 50m
 
-# 근처 공영 주차장 반경(km)
-PARKING_RADIUS_KM = 2.0
+# 근처 공영 주차장 반경(km) — 500m
+PARKING_RADIUS_KM = 0.5
 
 
 def _haversine_km(lat1, lon1, lat2, lon2):
