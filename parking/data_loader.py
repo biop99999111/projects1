@@ -85,7 +85,8 @@ def get_parking_rows():
             lng = float(row[25].strip())
             name = row[2].strip() if len(row) > 2 else ''
             address = row[6].strip() if len(row) > 6 else (row[5].strip() if len(row) > 5 else '')
-            fee = row[16].strip() if len(row) > 16 else ''
+            # 요금정보(15), 주차기본시간(16), 주차기본요금(17)
+            fee = row[15].strip() if len(row) > 15 else ''
             out.append({
                 'name': name,
                 'address': address,
