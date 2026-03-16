@@ -9,15 +9,14 @@
         body { margin: 0; font-family: 'Malgun Gothic', sans-serif; }
         .app { display: flex; height: 100vh; overflow: hidden; }
         .menu-bar {
-            width: 52px; min-width: 52px; height: 100vh;
+            width: 120px; min-width: 120px; height: 100vh;
             background: #e9ecef; border-right: 1px solid #dee2e6;
             display: flex; flex-direction: column; padding: 8px 0; gap: 4px;
         }
         .menu-bar-item {
-            writing-mode: vertical-rl; text-orientation: mixed;
-    width: 100%; min-height: 48px; padding: 10px 6px;
-            border: none; background: transparent; color: #495057; font-size: 12px; cursor: pointer;
-            display: flex; align-items: center; justify-content: center; word-break: keep-all;
+            width: 100%; min-height: 40px; padding: 8px 10px;
+            border: none; background: transparent; color: #495057; font-size: 13px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; word-break: keep-all; white-space: nowrap;
         }
         .menu-bar-item:hover { background: #dee2e6; }
         .menu-bar-item.active { background: #1976d2; color: #fff; font-weight: bold; }
@@ -90,8 +89,8 @@
     <div class="app">
         <div class="menu-bar" id="menu-bar">
             <button type="button" class="menu-bar-item" data-menu="list" title="주차장 리스트 검색">주차장 리스트</button>
-            <button type="button" class="menu-bar-item active" data-menu="area" title="주차가능/불가능 지역 안내">주차가능·불가 안내</button>
-            <button type="button" class="menu-bar-item" data-menu="route" title="경로 안내">경로 안내</button>
+            <button type="button" class="menu-bar-item active" data-menu="area" title="주차 지역 안내">주차지역 안내</button>
+            <button type="button" class="menu-bar-item" data-menu="route" title="실시간 예상 시간 안내">실시간 예상 시간</button>
             <button type="button" class="menu-bar-item" data-menu="fee" title="주차요금 계산기">요금 계산기</button>
         </div>
         <div class="nav-wrap" id="nav-wrap">
@@ -114,7 +113,7 @@
         var mapContainer = document.getElementById('map');
         var options = {
             center: new kakao.maps.LatLng(37.6584, 126.8320),
-            level: 10
+            level: 7
         };
         var map = new kakao.maps.Map(mapContainer, options);
 
@@ -288,9 +287,9 @@
         function renderRouteGuidePanel() {
             var nav = document.getElementById('nav-content');
             if (currentMenu !== 'route') return;
-            var html = '<div class="nav-title" style="color:#1976d2;">🛣 경로 안내</div>';
+            var html = '<div class="nav-title" style="color:#1976d2;">🕒 실시간 예상 시간</div>';
             if (!lastRouteParking) {
-                html += '<div class="empty-state">주차장을 선택하면 경로와 실시간 이동 예상시간이 여기에 표시됩니다.</div>';
+                html += '<div class="empty-state">주차장을 선택하면 실시간 이동 예상시간이 여기에 표시됩니다.</div>';
             } else {
                 html += '<div class="detail-card">';
                 html += '<div class="detail-head">' + (lastRouteParking.name || '공영주차장') + '</div>';

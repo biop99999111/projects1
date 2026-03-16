@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
-"""CCTV 단속 구역·공영 주차장 CSV 로드 및 거리 계산."""
+"""CCTV 단속 구역·공영 주차장 데이터 로드 및 거리 계산."""
 import csv
 import math
 from pathlib import Path
+import urllib.request
+import urllib.parse
+import json as json_module
 
 from django.conf import settings
 
@@ -10,7 +13,14 @@ from django.conf import settings
 GOYANG_CENTER = (37.6584, 126.8320)
 
 # 단속 구역 판정: 클릭 좌표와 이 거리(km) 이내면 단속 구역으로 간주
-ENFORCEMENT_RADIUS_KM = 0.05  # 약 50m
+ENFORCEMENT_RADIUS_KM = 0.1  # 약 100m
+
+# 카카오 주소→좌표 변환 캐시
+_GEOCODE_CACHE = {}
+
+# 외부 API 결과 캐시 (프로세스 생명주기 동안 재사용)
+_PARKING_ROWS_CACHE = None
+_CCTV_ROWS_CACHE = None
 
 # 근처 공영 주차장 반경(km) — 500m
 PARKING_RADIUS_KM = 0.5
@@ -24,6 +34,51 @@ def _haversine_km(lat1, lon1, lat2, lon2):
     dlam = math.radians(lon2 - lon1)
     a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _kakao_geocode(address: str):
+    """카카오 주소 검색 API로 주소를 좌표로 변환."""
+    if not address:
+        return None
+    cached = _GEOCODE_CACHE.get(address)
+    if cached is not None:
+        return cached
+
+    rest_key = getattr(
+        settings,
+        "KAKAO_REST_API_KEY",
+        "db210bbb1640818e0b3e3fc726869367",
+    )
+    try:
+        params = {"query": address}
+        url = "https://dapi.kakao.com/v2/local/search/address.json?" + urllib.parse.urlencode(
+            params
+        )
+        req = urllib.request.Request(
+            url,
+            headers={"Authorization": f"KakaoAK {rest_key}"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json_module.loads(resp.read().decode("utf-8"))
+    except Exception:
+        _GEOCODE_CACHE[address] = None
+        return None
+
+    docs = data.get("documents") or []
+    if not docs:
+        _GEOCODE_CACHE[address] = None
+        return None
+
+    try:
+        first = docs[0]
+        lat = float(first.get("y"))
+        lng = float(first.get("x"))
+    except (TypeError, ValueError):
+        _GEOCODE_CACHE[address] = None
+        return None
+
+    _GEOCODE_CACHE[address] = (lat, lng)
+    return lat, lng
 
 
 def _load_csv(path, encoding='utf-8'):
@@ -48,79 +103,199 @@ def _load_csv(path, encoding='utf-8'):
 
 
 def get_cctv_rows():
-    """CCTV 단속 CSV 행 목록. 각 행: [관리번호, 소재지, 위도, 경도]."""
-    base = getattr(settings, 'BASE_DIR', Path(__file__).resolve().parent.parent)
-    path = base / 'Go-yang-si_cctv.csv'
-    raw = _load_csv(str(path))
+    """경기도 고양시_주정차단속 CCTV 설치 현황(ODCloud) 기반 단속 구역 목록.
+
+    외부 API 및 지오코딩 결과는 프로세스 단위 캐시에 저장하여
+    매 요청마다 재호출하지 않도록 한다.
+    """
+    global _CCTV_ROWS_CACHE
+    if _CCTV_ROWS_CACHE is not None:
+        return _CCTV_ROWS_CACHE
+    service_key = getattr(
+        settings,
+        "GOYANG_CCTV_ODCLOUD_KEY",
+        "60f01de3cd6f82597a051c59f13252afc161e1db0b12fe694f2f061443abe0d1",
+    )
+    base_url = (
+        "https://api.odcloud.kr/api/15086953/v1/"
+        "uddi:814bceb8-3007-490f-9420-b888f3aea4fc"
+    )
+
     out = []
-    for row in raw:
-        if len(row) < 4:
-            continue
+    page = 1
+    per_page = 100
+
+    while True:
+        params = {
+            "page": page,
+            "perPage": per_page,
+            "serviceKey": service_key,
+        }
+        url = base_url + "?" + urllib.parse.urlencode(params)
         try:
-            lat = float(row[2].strip())
-            lng = float(row[3].strip())
-            out.append({
-                'id': row[0].strip(),
-                'address': row[1].strip(),
-                'lat': lat,
-                'lng': lng,
-            })
-        except (ValueError, IndexError):
+            with urllib.request.urlopen(url, timeout=5) as resp:
+                data = json_module.loads(resp.read().decode("utf-8"))
+        except Exception:
+            break
+
+        rows = data.get("data") or []
+        if not rows:
+            break
+
+        for item in rows:
+            addr = item.get("설치주소") or ""
+            spot = item.get("설치지점") or ""
+            if addr and "고양시" not in addr:
+                # 다른 시 데이터가 섞여 있을 경우를 대비해 필터
+                continue
+
+            full_addr = f"{addr} {spot}".strip()
+            geo = _kakao_geocode(full_addr or addr)
+            if not geo:
+                continue
+            lat, lng = geo
+
+            out.append(
+                {
+                    "id": str(item.get("연번", "")),
+                    "address": full_addr or addr,
+                    "lat": lat,
+                    "lng": lng,
+                }
+            )
+
+        if len(rows) < per_page:
+            break
+        page += 1
+
+    _CCTV_ROWS_CACHE = out
+    return _CCTV_ROWS_CACHE
+
+
+def _fetch_parking_rows_from_openapi():
+    """경기데이터드림 OPEN API(공영주차장)에서 고양시 데이터 조회."""
+    api_key = getattr(
+        settings,
+        "GG_PARKING_OPENAPI_KEY",
+        "1d7210208912479893aac27da2df3248",
+    )
+    base_url = "https://openapi.gg.go.kr/ParkingPlace"
+
+    rows = []
+    page = 1
+    page_size = 1000
+
+    while True:
+        # SIGUN_NM으로 바로 필터하면 지자체 명칭 변경(고양특례시 등) 시
+        # 전체 데이터가 비어버릴 수 있으므로, 전체를 조회한 뒤
+        # 아래에서 '고양'이 포함된 시군만 필터링한다.
+        params = {
+            "KEY": api_key,
+            "Type": "json",
+            "pIndex": page,
+            "pSize": page_size,
+        }
+        url = base_url + "?" + urllib.parse.urlencode(params)
+        try:
+            with urllib.request.urlopen(url, timeout=5) as resp:
+                data = json_module.loads(resp.read().decode("utf-8"))
+        except Exception:
+            break
+
+        items = data.get("ParkingPlace")
+        payload = None
+        if isinstance(items, list):
+            # 구조: {"ParkingPlace":[{"head":[...]},{"row":[...]}]}
+            for elem in items:
+                if isinstance(elem, dict) and "row" in elem:
+                    payload = elem
+                    break
+        elif isinstance(items, dict):
+            payload = items
+        else:
+            payload = data.get("ParkingPlace", {})
+
+        row_list = payload.get("row") if isinstance(payload, dict) else None
+        if not row_list:
+            break
+
+        rows.extend(row_list)
+        if len(row_list) < page_size:
+            break
+        page += 1
+
+    out = []
+
+    def _g(item, key, default=""):
+        v = item.get(key, default)
+        if v is None:
+            return default
+        if isinstance(v, str):
+            return v.strip()
+        return v
+
+    for item in rows:
+        # 시군명이 '고양'이 포함된 데이터(고양시/고양특례시 등)만 사용
+        sigun_nm = _g(item, "SIGUN_NM")
+        if sigun_nm and "고양" not in sigun_nm:
             continue
+
+        try:
+            lat = float(_g(item, "REFINE_WGS84_LAT"))
+            lng = float(_g(item, "REFINE_WGS84_LOGT"))
+        except (TypeError, ValueError):
+            continue
+
+        addr_r = _g(item, "LOCPLC_ROADNM_ADDR")
+        addr_j = _g(item, "LOCPLC_LOTNO_ADDR")
+
+        out.append(
+            {
+                "name": _g(item, "PARKPLC_NM"),
+                "address": addr_j or addr_r,
+                "parking_type": _g(item, "PARKPLC_TYPE"),  # 노상/노외 등
+                "address_road": addr_r,
+                "address_jibun": addr_j,
+                "capacity": _g(item, "PARKNG_COMPRT_PLANE_CNT"),
+                "operating_days": _g(item, "SUBTL_IMPLMTN_DIV_NM"),
+                "weekday_start": _g(item, "WKDAY_OPERT_BEGIN_TM"),
+                "weekday_end": _g(item, "WKDAY_OPERT_END_TM"),
+                "saturday_start": _g(item, "SAT_OPERT_BEGIN_TM"),
+                "saturday_end": _g(item, "SAT_OPERT_END_TM"),
+                "holiday_start": _g(item, "HOLIDAY_OPERT_BEGIN_TM"),
+                "holiday_end": _g(item, "HOLIDAY_OPERT_END_TM"),
+                "fee": _g(item, "CHRG_INFO"),
+                "base_minutes": _g(item, "PARKNG_BASIS_TM"),
+                "base_fee": _g(item, "PARKNG_BASIS_USE_CHRG"),
+                "extra_unit_minutes": _g(item, "ADD_UNIT_TM"),
+                "extra_unit_fee": _g(item, "ADD_UNIT_TM2_WITHIN_USE_CHRG"),
+                "day_pass_hours": _g(item, "DAY1_PARKTK_CHRG_APPLCTN_TM"),
+                "day_pass_fee": _g(item, "DAY1_PARKTK_USE_CHRG"),
+                "monthly_fee": _g(item, "MT_CMMTICKT_WEEK_USE_CHRG"),
+                "phone": _g(item, "CONTCT_NO"),
+                "lat": lat,
+                "lng": lng,
+                "disabled_space": "",  # OPEN API에 별도 필드가 없으므로 공백
+            }
+        )
+
     return out
 
 
 def get_parking_rows():
-    """공영 주차장 CSV 행. 위도·경도는 마지막에서 3번째, 2번째 컬럼."""
-    base = getattr(settings, 'BASE_DIR', Path(__file__).resolve().parent.parent)
-    path = base / 'Go-yang-si_parking_lot.csv'
-    raw = _load_csv(str(path))
-    out = []
-    # CSV 컬럼: 0번호 1아이디 2주차장명 3구분 4유형 5도로명 6지번 7구획수 8운영요일
-    # 9평일시작 10평일종료 11토시작 12토종료 13공휴시작 14공휴종료
-    # 15요금정보 16기본시간 17기본요금 18추가단위시간 19추가단위요금
-    # 20일권적용시간 21일권요금 22월정기권 23전화 24위도 25경도 26장애인
-    def _cell(row, i, default=''):
-        return row[i].strip() if len(row) > i else default
+    """공영 주차장 데이터: 경기데이터드림 OPEN API만 사용.
 
-    for row in raw:
-        if len(row) < 26:
-            continue
-        try:
-            lat = float(row[24].strip())
-            lng = float(row[25].strip())
-            addr_j = _cell(row, 6)
-            addr_r = _cell(row, 5)
-            out.append({
-                'name': _cell(row, 2),
-                'address': addr_j or addr_r,
-                'parking_type': _cell(row, 4),      # 노외/부설/노상
-                'address_road': addr_r,
-                'address_jibun': addr_j,
-                'capacity': _cell(row, 7),          # 주차구획수
-                'operating_days': _cell(row, 8),    # 운영요일
-                'weekday_start': _cell(row, 9),
-                'weekday_end': _cell(row, 10),
-                'saturday_start': _cell(row, 11),
-                'saturday_end': _cell(row, 12),
-                'holiday_start': _cell(row, 13),
-                'holiday_end': _cell(row, 14),
-                'fee': _cell(row, 15),              # 요금정보
-                'base_minutes': _cell(row, 16),
-                'base_fee': _cell(row, 17),
-                'extra_unit_minutes': _cell(row, 18),
-                'extra_unit_fee': _cell(row, 19),
-                'day_pass_hours': _cell(row, 20),
-                'day_pass_fee': _cell(row, 21),
-                'monthly_fee': _cell(row, 22),
-                'phone': _cell(row, 23),
-                'lat': lat,
-                'lng': lng,
-                'disabled_space': _cell(row, 26),   # Y/N
-            })
-        except (ValueError, IndexError):
-            continue
-    return out
+    외부 API 결과는 프로세스 단위 캐시에 보관하여
+    매 요청마다 재호출하지 않도록 한다.
+    """
+    global _PARKING_ROWS_CACHE
+    if _PARKING_ROWS_CACHE is not None:
+        return _PARKING_ROWS_CACHE
+
+    # 경기데이터드림 OPEN API에서 한 번만 조회 후 캐시에 저장
+    api_rows = _fetch_parking_rows_from_openapi()
+    _PARKING_ROWS_CACHE = api_rows or []
+    return _PARKING_ROWS_CACHE
 
 
 def get_all_parking_simple():
