@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>고양시 주차 단속 구역 알림</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: 'Malgun Gothic', sans-serif; }
+        #map { width: 100%; height: 100vh; }
+        .info-title { font-weight: bold; margin-bottom: 6px; font-size: 14px; }
+        .info-enforcement { color: #c00; }
+        .info-safe { color: #080; }
+        .info-content { font-size: 12px; line-height: 1.5; }
+        .info-content.box-enforcement { background: #ffebeb; border: 2px solid #c00; }
+        .info-content.box-safe { background: #e8f5e9; border: 2px solid #080; }
+        .parking-list { margin-top: 10px; max-height: 180px; overflow-y: auto; }
+        .parking-item { padding: 6px 0; border-bottom: 1px solid #eee; font-size: 11px; }
+        .parking-item:last-child { border-bottom: none; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey={{ kakao_map_js_key }}&libraries=services"></script>
+    <script>
+        var mapContainer = document.getElementById('map');
+        var options = {
+            center: new kakao.maps.LatLng(37.6584, 126.8320),
+            level: 10
+        };
+        var map = new kakao.maps.Map(mapContainer, options);
+
+        var currentMarker = null;
+        var currentOverlay = null;
+
+        // 벌금 안내 문구 (불법 주차 단속 기준)
+        var FINE_INFO = '불법 주차 과태료: 40,000원 (승차자 하차 후 즉시 출발 20,000원). 장애인 전용 주차구역 위반 등 추가 과태료가 부과될 수 있습니다.';
+
+        function hideOverlay() {
+            if (currentOverlay) {
+                currentOverlay.setMap(null);
+                currentOverlay = null;
+            }
+        }
+
+        function showInfoWindow(position, isEnforcement, cctv, nearbyParking) {
+            hideOverlay();
+
+            var titleClass = isEnforcement ? 'info-enforcement' : 'info-safe';
+            var boxClass = isEnforcement ? 'box-enforcement' : 'box-safe';
+            var title = isEnforcement ? '⚠ 단속 구역 (CCTV)' : '✓ 주차 가능 구역';
+            var html = '<div class="info-content ' + boxClass + '" style="padding:8px;min-width:220px;">';
+            html += '<div class="info-title ' + titleClass + '">' + title + '</div>';
+            if (isEnforcement && cctv) {
+                html += '<div>관리번호: ' + (cctv.id || '') + '</div>';
+                html += '<div>소재지: ' + (cctv.address || '') + '</div>';
+                html += '<div style="margin-top:6px;color:#c00;font-weight:bold;">' + FINE_INFO + '</div>';
+            } else {
+                html += '<div>해당 위치는 단속 구역이 아닙니다. 주차 시 규정을 확인하세요.</div>';
+            }
+            if (nearbyParking && nearbyParking.length > 0) {
+                html += '<div class="parking-list"><strong>근처 2km 이내 공영 주차장</strong>';
+                for (var i = 0; i < Math.min(nearbyParking.length, 5); i++) {
+                    var p = nearbyParking[i];
+                    html += '<div class="parking-item">' + (p.name || '주차장') + ' (' + p.distance_km + 'km) - ' + (p.fee || '') + '</div>';
+                }
+                if (nearbyParking.length > 5) html += '<div class="parking-item">외 ' + (nearbyParking.length - 5) + '곳</div>';
+                html += '</div>';
+            }
+            html += '</div>';
+
+            var customOverlay = new kakao.maps.CustomOverlay({
+                position: position,
+                content: html,
+                yAnchor: 1.1
+            });
+            customOverlay.setMap(map);
+            currentOverlay = customOverlay;
+        }
+
+        function placeMarkerAndCheck(lat, lng) {
+            if (currentMarker) currentMarker.setMap(null);
+            var pos = new kakao.maps.LatLng(lat, lng);
+            var marker = new kakao.maps.Marker({ position: pos });
+            marker.setMap(map);
+            currentMarker = marker;
+
+            var url = '/api/check-location/?lat=' + lat + '&lng=' + lng;
+            fetch(url)
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    var isEnforcement = data.is_enforcement === true;
+                    if (isEnforcement) {
+                        marker.setMap(null);
+                        var redMarker = new kakao.maps.Marker({ position: pos });
+                        try {
+                            var redImg = 'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png';
+                            var redSize = new kakao.maps.Size(24, 35);
+                            var redMarkerImg = new kakao.maps.MarkerImage(redImg, redSize);
+                            redMarker.setImage(redMarkerImg);
+                        } catch (e) {}
+                        redMarker.setMap(map);
+                        currentMarker = redMarker;
+                    }
+                    showInfoWindow(pos, isEnforcement, data.cctv || null, data.nearby_parking || []);
+                })
+                .catch(function() {
+                    showInfoWindow(pos, false, null, []);
+                });
+        }
+
+        kakao.maps.event.addListener(map, 'click', function(mouseEvent) {
+            var latlng = mouseEvent.latLng;
+            placeMarkerAndCheck(latlng.getLat(), latlng.getLng());
+        });
+    </script>
+</body>
+</html>
