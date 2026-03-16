@@ -29,7 +29,7 @@ def api_check_location(request):
 
 @require_GET
 def api_route(request):
-    """출발·도착 위경도로 도로 경로 좌표 반환 (OSRM 드라이빙)."""
+    """출발·도착 위경도로 실제 도로 경로 좌표 및 실시간 이동시간 반환 (카카오 내비 REST API)."""
     try:
         start_lat = float(request.GET.get('start_lat'))
         start_lng = float(request.GET.get('start_lng'))
@@ -37,25 +37,55 @@ def api_route(request):
         end_lng = float(request.GET.get('end_lng'))
     except (TypeError, ValueError, KeyError):
         return JsonResponse({'error': 'start_lat, start_lng, end_lat, end_lng required'}, status=400)
-    # OSRM: coordinates are lon,lat
+
+    rest_key = getattr(settings, 'KAKAO_REST_API_KEY', 'db210bbb1640818e0b3e3fc726869367')
     url = (
-        'https://router.project-osrm.org/route/v1/driving/'
-        f'{start_lng},{start_lat};{end_lng},{end_lat}'
-        '?overview=full&geometries=geojson'
+        'https://apis-navi.kakaomobility.com/v1/directions'
+        f'?origin={start_lng},{start_lat}&destination={end_lng},{end_lat}&priority=TIME'
     )
+    req = urllib.request.Request(url, headers={'Authorization': f'KakaoAK {rest_key}'})
+
     try:
-        with urllib.request.urlopen(url, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=5) as resp:
             data = json_module.loads(resp.read().decode())
     except Exception:
-        return JsonResponse({'path': []})
-    path = []
+        # 실패 시에는 경로 없이 시간도 제공하지 않음
+        return JsonResponse({'path': [], 'duration_seconds': None})
+
+    # 카카오 내비 응답: routes[0].summary.duration (초 단위, 일부 버전은 ms일 수 있어 보정)
     duration_seconds = None
-    if data.get('code') == 'Ok' and data.get('routes'):
-        route = data['routes'][0]
-        coords = route.get('geometry', {}).get('coordinates', [])
-        for lon, lat in coords:
-            path.append([lat, lon])
-        duration_seconds = route.get('duration')
+    path = []
+    routes = data.get('routes') or []
+    if routes:
+        first_route = routes[0]
+        summary = first_route.get('summary') or {}
+        dur = summary.get('duration')
+        if isinstance(dur, (int, float)):
+            # ms 단위 가능성도 고려해 1,000,000 이상이면 초로 보정
+            duration_seconds = int(dur / 1000) if dur > 1000000 else int(dur)
+
+        # 실제 도로 경로 좌표 구성
+        sections = first_route.get('sections') or []
+        coords = []
+        for sec in sections:
+            roads = sec.get('roads') or []
+            for road in roads:
+                # vertexes: [lng1, lat1, lng2, lat2, ...]
+                v = road.get('vertexes') or []
+                for i in range(0, len(v) - 1, 2):
+                    lng = v[i]
+                    lat = v[i + 1]
+                    coords.append([lat, lng])
+
+        # 좌표가 있으면 그것을 path로 사용, 없으면 직선 fallback
+        if coords:
+            path = coords
+        else:
+            path = [[start_lat, start_lng], [end_lat, end_lng]]
+    else:
+        # routes 없으면 직선 fallback
+        path = [[start_lat, start_lng], [end_lat, end_lng]]
+
     return JsonResponse({'path': path, 'duration_seconds': duration_seconds})
 
 @require_GET
