@@ -169,7 +169,7 @@
             return new kakao.maps.Marker({ position: position, image: markerImage });
         }
 
-        // 출발지와 목적지가 모두 보이도록 지도 범위 조정 (멀리 있는 주차장 선택 시)
+        // 출발지와 목적지가 모두 보이도록 지도 범위 조정 (축소/확대 후 여백 포함)
         function setMapViewToShowStartAndEnd(startLat, startLng, endLat, endLng) {
             if (startLat == null || startLng == null || endLat == null || endLng == null) return;
             var start = new kakao.maps.LatLng(startLat, startLng);
@@ -181,6 +181,15 @@
                 map.setCenter(end);
                 map.setLevel(PARKING_CLICK_MAP_LEVEL);
                 return;
+            }
+            var sw = bounds.getSouthWest();
+            var ne = bounds.getNorthEast();
+            if (sw && ne) {
+                var latSpan = Math.max(ne.getLat() - sw.getLat(), 0.002);
+                var lngSpan = Math.max(ne.getLng() - sw.getLng(), 0.002);
+                var pad = 0.25;
+                bounds.extend(new kakao.maps.LatLng(sw.getLat() - latSpan * pad, sw.getLng() - lngSpan * pad));
+                bounds.extend(new kakao.maps.LatLng(ne.getLat() + latSpan * pad, ne.getLng() + lngSpan * pad));
             }
             map.setBounds(bounds);
         }
@@ -346,7 +355,9 @@
             html += '</div>';
             if (nearbyParking && nearbyParking.length > 0) {
                 currentNearbyParking = nearbyParking;
-                html += '<div class="nav-section"><div class="nav-label">근처 500m 이내 공영 주차장</div>';
+                html += '<div class="nav-section">';
+                html += '<button type="button" class="btn btn-primary" id="btn-guide-nearest" style="margin-bottom:12px; width:100%;">가장 가까운 공영주차장으로 안내</button>';
+                html += '<div class="nav-label">근처 500m 이내 공영 주차장</div>';
                 html += '<ul class="parking-list">';
                 for (var i = 0; i < nearbyParking.length; i++) {
                     var p = nearbyParking[i];
@@ -357,8 +368,20 @@
                 html += '<div id="nav-detail-card">' + buildNearestDetailCard(nearbyParking[0]) + '</div>';
             }
             lastAreaData = { isEnforcement: isEnforcement, cctv: cctv, nearbyParking: nearbyParking || [] };
-            if (currentMenu === 'area') nav.innerHTML = html;
-            else if (currentMenu === 'list') renderListPanel();
+            if (currentMenu === 'area') {
+                nav.innerHTML = html;
+                var btnNearest = document.getElementById('btn-guide-nearest');
+                if (btnNearest && nearbyParking && nearbyParking.length > 0) {
+                    btnNearest.addEventListener('click', function() {
+                        var nearest = nearbyParking[0];
+                        if (placeMarkerLat != null && placeMarkerLng != null) {
+                            setMapViewToShowStartAndEnd(placeMarkerLat, placeMarkerLng, nearest.lat, nearest.lng);
+                            drawRouteToNearest(placeMarkerLat, placeMarkerLng, nearest);
+                            updateDetailCard(nearest);
+                        }
+                    });
+                }
+            } else if (currentMenu === 'list') renderListPanel();
         }
 
         function showRouteInfoOnMarker(targetParking) {
