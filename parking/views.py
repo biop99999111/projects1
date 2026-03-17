@@ -5,10 +5,99 @@ from django.conf import settings
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.csrf import csrf_exempt
-from .data_loader import check_enforcement, get_nearby_parking, get_all_parking_simple
+from .data_loader import check_enforcement, get_nearby_parking, get_all_parking_simple, get_cctv_rows
 from .models import Report
 
+from django.shortcuts import render
+import json
 
+from django.db.models import Count
+from django.db.models.functions import TruncDate
+from .models import Report
+import json
+
+
+def goyang_stats_view(request):
+    api_data = get_cctv_rows()
+    db_data = Report.objects.all()
+
+    # 집계 데이터 초기화
+    counts = {'덕양구': 0, '일산동구': 0, '일산서구': 0, '기타': 0}
+
+    # 인터넷 검색 기반 고양시 구별 법정동 리스트
+    dong_map = {
+        '덕양구': [
+            '주교', '원당', '성사', '북한', '효자', '지축', '오금', '삼송', '동산', '용두',
+            '벽제', '선유', '고양', '대자동', '내유', '토당', '내곡', '대장', '화정', '강매',
+            '행주', '신평', '행신', '화전', '현천', '덕은', '향동', '원흥', '도내', '성사', '신원'
+        ],
+        '일산동구': [
+            '식사', '중산', '풍동', '산황', '백석', '마두', '장항', '설문', '지영', '성석', '풍산', '정발산', '고봉'
+        ],
+        '일산서구': [
+            '일산동', '주엽', '탄현', '대화', '가좌', '구산', '법곳', '송포', '송산', '덕이'
+        ]
+    }
+
+    # 통합 데이터 분석 (API + DB)
+    combined_data = []
+    for d in api_data:
+        combined_data.append(d.get('address', ''))
+    # 시민 신고(DB) 데이터 분류 부분
+    for r in db_data:
+        if r.lat and r.lng:
+            # 고양시 구별 대략적인 경도(lng) 경계선 기준
+            # 126.81보다 크면(동쪽) 덕양구
+            if r.lng > 126.81:
+                counts['덕양구'] += 1
+            # 126.74 ~ 126.81 사이면 일산동구
+            elif 126.74 < r.lng <= 126.81:
+                counts['일산동구'] += 1
+            # 126.74보다 작으면(서쪽) 일산서구
+            else:
+                counts['일산서구'] += 1
+        else:
+            counts['기타'] += 1
+
+    for addr in combined_data:
+        matched = False
+        # 1. '구' 이름 직접 매칭
+        if '덕양' in addr:
+            counts['덕양구'] += 1
+            matched = True
+        elif '일산동' in addr:
+            counts['일산동구'] += 1
+            matched = True
+        elif '일산서' in addr:
+            counts['일산서구'] += 1
+            matched = True
+
+        # 2. '구' 이름이 없을 경우 '동' 이름으로 2차 매칭
+        if not matched:
+            for district, dongs in dong_map.items():
+                if any(dong in addr for dong in dongs):
+                    counts[district] += 1
+                    matched = True
+                    break
+
+        if not matched:
+            counts['기타'] += 1
+
+    total_count = len(combined_data)
+
+    # 퍼센트 계산
+    stats_pct = {k: round((v / total_count * 100), 1) if total_count > 0 else 0 for k, v in counts.items()}
+
+    return render(request, 'parking/stats.html', {
+        'districts': counts,
+        'stats_pct': stats_pct,
+        'total_count': total_count,
+        'api_count': len(api_data),
+        'db_count': db_data.count(),
+        'cctv_json': json.dumps(api_data),  # API 데이터
+        'reports_json': json.dumps(list(db_data.values('lat', 'lng', 'content'))),  # DB 데이터 (추가!)
+        'kakao_map_js_key': settings.KAKAO_MAP_JS_KEY
+    })
 def map_view(request):
     """메인 페이지: 카카오맵 지도."""
     return render(request, 'parking/map.html', {

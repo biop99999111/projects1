@@ -11,4 +11,6 @@ urlpatterns = [
     path('api/reports/create/', views.api_report_create, name='api_report_create'),
     path('api/reports/<int:report_id>/', views.api_report_detail, name='api_report_detail'),
     path('api/reports/<int:report_id>/delete/', views.api_report_delete, name='api_report_delete'),
+
+    path('stats/', views.goyang_stats_view, name='goyang_stats'),
 ]
