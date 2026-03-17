@@ -8,3 +8,6 @@ wheels/
 
 # Virtual environments
 .venv
+
+# API 디스크 캐시 (재시작 시 빠른 로드용)
+.cache/

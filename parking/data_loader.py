@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """CCTV 단속 구역·공영 주차장 데이터 로드 및 거리 계산."""
 import csv
-import math
-from pathlib import Path
-import urllib.request
-import urllib.parse
 import json as json_module
+import math
+import time
+import urllib.parse
+import urllib.request
+from pathlib import Path
 
 from django.conf import settings
 
@@ -21,6 +22,18 @@ _GEOCODE_CACHE = {}
 # 외부 API 결과 캐시 (프로세스 생명주기 동안 재사용)
 _PARKING_ROWS_CACHE = None
 _CCTV_ROWS_CACHE = None
+
+# 디스크 캐시: 재시작 시 API 재호출 없이 즉시 로드 (유효 시간 초)
+_DISK_CACHE_TTL_SEC = getattr(settings, "PARKING_API_CACHE_TTL_SEC", 24 * 3600)  # 기본 24시간
+
+
+def _get_cache_dir():
+    """디스크 캐시 저장 경로 (프로젝트 기준 .cache/parking)."""
+    base = Path(settings.BASE_DIR)
+    cache_dir = base / ".cache" / "parking"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
 
 # 근처 공영 주차장 반경(km) — 500m
 PARKING_RADIUS_KM = 0.5
@@ -106,11 +119,21 @@ def get_cctv_rows():
     """경기도 고양시_주정차단속 CCTV 설치 현황(ODCloud) 기반 단속 구역 목록.
 
     외부 API 및 지오코딩 결과는 프로세스 단위 캐시에 저장하여
-    매 요청마다 재호출하지 않도록 한다.
+    매 요청마다 재호출하지 않도록 한다. 디스크 캐시가 유효하면 API 호출 없이 즉시 반환.
     """
     global _CCTV_ROWS_CACHE
     if _CCTV_ROWS_CACHE is not None:
         return _CCTV_ROWS_CACHE
+    cache_file = _get_cache_dir() / "cctv_rows.json"
+    if cache_file.exists():
+        try:
+            mtime = cache_file.stat().st_mtime
+            if (time.time() - mtime) <= _DISK_CACHE_TTL_SEC:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    _CCTV_ROWS_CACHE = json_module.load(f)
+                return _CCTV_ROWS_CACHE
+        except Exception:
+            pass
     service_key = getattr(
         settings,
         "GOYANG_CCTV_ODCLOUD_KEY",
@@ -169,6 +192,11 @@ def get_cctv_rows():
         page += 1
 
     _CCTV_ROWS_CACHE = out
+    try:
+        with open(cache_file, "w", encoding="utf-8") as f:
+            json_module.dump(out, f, ensure_ascii=False, indent=0)
+    except Exception:
+        pass
     return _CCTV_ROWS_CACHE
 
 
@@ -286,15 +314,30 @@ def get_parking_rows():
     """공영 주차장 데이터: 경기데이터드림 OPEN API만 사용.
 
     외부 API 결과는 프로세스 단위 캐시에 보관하여
-    매 요청마다 재호출하지 않도록 한다.
+    매 요청마다 재호출하지 않도록 한다. 디스크 캐시가 유효하면 API 호출 없이 즉시 반환.
     """
     global _PARKING_ROWS_CACHE
     if _PARKING_ROWS_CACHE is not None:
         return _PARKING_ROWS_CACHE
+    cache_file = _get_cache_dir() / "parking_rows.json"
+    if cache_file.exists():
+        try:
+            mtime = cache_file.stat().st_mtime
+            if (time.time() - mtime) <= _DISK_CACHE_TTL_SEC:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    _PARKING_ROWS_CACHE = json_module.load(f)
+                return _PARKING_ROWS_CACHE
+        except Exception:
+            pass
 
     # 경기데이터드림 OPEN API에서 한 번만 조회 후 캐시에 저장
     api_rows = _fetch_parking_rows_from_openapi()
     _PARKING_ROWS_CACHE = api_rows or []
+    try:
+        with open(cache_file, "w", encoding="utf-8") as f:
+            json_module.dump(_PARKING_ROWS_CACHE, f, ensure_ascii=False, indent=0)
+    except Exception:
+        pass
     return _PARKING_ROWS_CACHE
 
 
