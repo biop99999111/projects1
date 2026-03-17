@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>고양시 주정차 정밀 관제 시스템</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root { --main-bg: #f8f9fa; --side-bg: #ffffff; --accent: #4e73df; }
+        body { margin: 0; font-family: 'Pretendard', sans-serif; display: flex; height: 100vh; background: var(--main-bg); overflow: hidden; }
+
+        /* 왼쪽 통계바 */
+        .sidebar { width: 380px; background: var(--side-bg); border-right: 1px solid #e3e6f0; padding: 20px; overflow-y: auto; box-shadow: 2px 0 5px rgba(0,0,0,0.05); z-index: 10; }
+        /* 오른쪽 지도 */
+        .map-container { flex: 1; position: relative; }
+        #map { width: 100%; height: 100%; }
+
+        h2 { font-size: 20px; color: #333; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
+        .card { background: #fff; border: 1px solid #e3e6f0; border-radius: 10px; padding: 15px; margin-bottom: 15px; }
+        .stat-val { font-size: 24px; font-weight: bold; color: var(--accent); }
+        .legend { font-size: 12px; color: #666; display: flex; gap: 10px; margin-bottom: 10px; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    </style>
+</head>
+<body>
+
+<div class="sidebar">
+    <h2>📊 통합 관제 리포트</h2>
+
+    <div class="card">
+        <div style="color: #888; font-size: 13px;">총 분석 데이터</div>
+        <div class="stat-val">{{ total_count }} <span style="font-size: 14px; font-weight: normal; color: #999;">건</span></div>
+    </div>
+
+    <div class="legend">
+        <span><span class="dot" style="background: #ff4d4d;"></span> 시민 신고({{ db_count }})</span>
+        <span><span class="dot" style="background: #4e73df;"></span> 단속 CCTV({{ api_count }})</span>
+    </div>
+
+    <div class="card">
+        <canvas id="districtChart" height="250"></canvas>
+    </div>
+
+    <div class="card">
+        <h3 style="font-size: 15px; margin: 0 0 10px;">구별 상세 (건수/비중)</h3>
+        <p style="font-size: 14px; margin: 5px 0;">📍 덕양구: <b>{{ districts.덕양구 }}건</b> ({{ stats_pct.덕양구 }}%)</p>
+        <p style="font-size: 14px; margin: 5px 0;">📍 일산동구: <b>{{ districts.일산동구 }}건</b> ({{ stats_pct.일산동구 }}%)</p>
+        <p style="font-size: 14px; margin: 5px 0;">📍 일산서구: <b>{{ districts.일산서구 }}건</b> ({{ stats_pct.일산서구 }}%)</p>
+        <p style="font-size: 14px; margin: 5px 0; color: #ccc;">기타: {{ districts.기타 }}건</p>
+    </div>
+</div>
+
+<div class="map-container">
+    <div id="map"></div>
+</div>
+
+<script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey={{ kakao_map_js_key }}&libraries=clusterer"></script>
+
+<script>
+    // 1. 차트 설정 (도넛형)
+    const ctx = document.getElementById('districtChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['덕양구', '일산동구', '일산서구'],
+            datasets: [{
+                data: [{{ districts.덕양구 }}, {{ districts.일산동구 }}, {{ districts.일산서구 }}],
+                backgroundColor: ['#4e73df', '#1cc88a', '#36b9cc'],
+                hoverOffset: 4
+            }]
+        },
+        options: { plugins: { legend: { position: 'bottom' } } }
+    });
+
+    // 2. 지도 초기화
+    var map = new kakao.maps.Map(document.getElementById('map'), {
+        center: new kakao.maps.LatLng(37.6584, 126.8320),
+        level: 8
+    });
+
+    var clusterer = new kakao.maps.MarkerClusterer({
+        map: map, averageCenter: true, minLevel: 6
+    });
+
+    // 3. 데이터 표시 (CCTV는 파란색, 시민 신고는 빨간색)
+    var apiData = {{ cctv_json|safe }};
+    var dbData = {{ reports_json|safe }}; // views.py에서 넘겨줘야 함
+
+    // CCTV 마커 (기본)
+    var apiMarkers = apiData.map(function(item) {
+        return new kakao.maps.Marker({
+            position: new kakao.maps.LatLng(item.lat, item.lng)
+        });
+    });
+
+    // 시민 신고 마커 (이미지 다르게 설정)
+    var imageSrc = "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png";
+    var imageSize = new kakao.maps.Size(24, 35);
+    var markerImage = new kakao.maps.MarkerImage(imageSrc, imageSize);
+
+    var dbMarkers = dbData.map(function(item) {
+        return new kakao.maps.Marker({
+            position: new kakao.maps.LatLng(item.lat, item.lng),
+            image: markerImage // 시민 신고는 별모양 마커로 구분!
+        });
+    });
+
+    clusterer.addMarkers(apiMarkers);
+    clusterer.addMarkers(dbMarkers);
+</script>
+
+</body>
+</html>
