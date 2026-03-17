@@ -1,10 +1,12 @@
 import urllib.request
 import json as json_module
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404
 from django.conf import settings
 from django.http import JsonResponse
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.csrf import csrf_exempt
 from .data_loader import check_enforcement, get_nearby_parking, get_all_parking_simple
+from .models import Report
 
 
 def map_view(request):
@@ -123,3 +125,75 @@ def api_search_parking_kakao(request):
     docs = data.get('documents') or []
     # 그대로 프론트에 전달 (place_name, address_name, road_address_name, x,y,distance 등)
     return JsonResponse({'documents': docs}, json_dumps_params={'ensure_ascii': False})
+
+
+# ----- 신고하기 / 신고목록 API -----
+
+@require_GET
+def api_report_list(request):
+    """신고 목록 (비밀번호 제외)."""
+    reports = Report.objects.all()[:200]
+    items = []
+    for r in reports:
+        items.append({
+            'id': r.id,
+            'vehicle_number': r.vehicle_number,
+            'lat': r.lat,
+            'lng': r.lng,
+            'content': r.content,
+            'created_at': r.created_at.isoformat() if r.created_at else None,
+        })
+    return JsonResponse({'reports': items}, json_dumps_params={'ensure_ascii': False})
+
+
+@require_GET
+def api_report_detail(request, report_id):
+    """신고 상세 (비밀번호 제외)."""
+    r = get_object_or_404(Report, pk=report_id)
+    return JsonResponse({
+        'id': r.id,
+        'vehicle_number': r.vehicle_number,
+        'lat': r.lat,
+        'lng': r.lng,
+        'content': r.content,
+        'created_at': r.created_at.isoformat() if r.created_at else None,
+    }, json_dumps_params={'ensure_ascii': False})
+
+
+@csrf_exempt
+@require_POST
+def api_report_create(request):
+    """신고하기 제출."""
+    try:
+        body = json_module.loads(request.body.decode('utf-8'))
+        vehicle_number = (body.get('vehicle_number') or '').strip()
+        lat = float(body.get('lat'))
+        lng = float(body.get('lng'))
+        content = (body.get('content') or '').strip()
+        password = body.get('password') or ''
+    except (TypeError, ValueError, KeyError):
+        return JsonResponse({'error': 'vehicle_number, lat, lng, password required'}, status=400)
+    if not vehicle_number:
+        return JsonResponse({'error': '차량번호를 입력하세요.'}, status=400)
+    if not password:
+        return JsonResponse({'error': '비밀번호를 입력하세요.'}, status=400)
+    r = Report(vehicle_number=vehicle_number, lat=lat, lng=lng, content=content)
+    r.set_password(password)
+    r.save()
+    return JsonResponse({'ok': True, 'id': r.id}, json_dumps_params={'ensure_ascii': False})
+
+
+@csrf_exempt
+@require_POST
+def api_report_delete(request, report_id):
+    """비밀번호 일치 시 신고 삭제."""
+    r = get_object_or_404(Report, pk=report_id)
+    try:
+        body = json_module.loads(request.body.decode('utf-8'))
+        password = body.get('password') or ''
+    except Exception:
+        return JsonResponse({'error': '비밀번호를 입력하세요.'}, status=400)
+    if not r.check_password(password):
+        return JsonResponse({'error': '비밀번호가 일치하지 않습니다.'}, status=403)
+    r.delete()
+    return JsonResponse({'ok': True}, json_dumps_params={'ensure_ascii': False})
