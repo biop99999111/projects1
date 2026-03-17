@@ -74,8 +74,8 @@
         #nav-bar .detail-card .detail-row .value.empty { color: #adb5bd; }
         #nav-bar .detail-card .detail-group { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #e9ecef; }
         #nav-bar .detail-card .detail-group .group-title { font-weight: bold; font-size: 11px; color: #495057; margin-bottom: 6px; }
-        #map-wrap { flex: 1; height: 100vh; position: relative; min-width: 0; }
-        #map { width: 100%; height: 100%; }
+        #map-wrap { flex: 1; height: 100vh; position: relative; min-width: 0; overflow: hidden; }
+        #map { width: 100%; height: 100%; position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
         .info-title { font-weight: bold; margin-bottom: 6px; font-size: 14px; }
         .info-enforcement { color: #c00; }
         .info-safe { color: #080; }
@@ -1141,12 +1141,35 @@
             var minW = 280, maxW = 720;
             var startX = 0, startW = 0;
 
+            function refreshMapSize() {
+                if (typeof map === 'undefined' || !map.relayout) return;
+                requestAnimationFrame(function() {
+                    map.relayout();
+                });
+                setTimeout(function() {
+                    map.relayout();
+                }, 100);
+                setTimeout(function() {
+                    map.relayout();
+                }, 350);
+            }
+
             closeBtn.addEventListener('click', function() {
                 wrap.classList.add('closed');
+                refreshMapSize();
+                wrap.addEventListener('transitionend', function onEnd() {
+                    wrap.removeEventListener('transitionend', onEnd);
+                    refreshMapSize();
+                }, { once: true });
             });
             openTab.addEventListener('click', function() {
                 wrap.classList.remove('closed');
                 if (wrap.style.width) wrap.style.width = startW || 420 + 'px';
+                refreshMapSize();
+                wrap.addEventListener('transitionend', function onEnd() {
+                    wrap.removeEventListener('transitionend', onEnd);
+                    refreshMapSize();
+                }, { once: true });
             });
 
             resizeHandle.addEventListener('mousedown', function(e) {
@@ -1166,6 +1189,7 @@
                     document.removeEventListener('mouseup', onUp);
                     document.body.style.cursor = '';
                     document.body.style.userSelect = '';
+                    refreshMapSize();
                 }
                 document.addEventListener('mousemove', onMove);
                 document.addEventListener('mouseup', onUp);
