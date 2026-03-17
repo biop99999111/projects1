@@ -395,7 +395,7 @@ def check_enforcement(lat, lng):
 
 
 def get_nearby_parking(lat, lng, radius_km=None):
-    """해당 위경도 기준 반경(기본 2km) 이내 공영 주차장 목록."""
+    """해당 위경도 기준 반경(기본 2km) 이내 공영 주차장 목록. 가까운 거리 순으로만 정렬."""
     radius_km = radius_km or PARKING_RADIUS_KM
     parking_list = get_parking_rows()
     result = []

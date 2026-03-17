@@ -65,6 +65,28 @@
             map.setBounds(bounds);
         }
 
+        // 경로 전체(파란 선)가 지도에 다 보이도록 범위 조정 (여백 포함)
+        function setMapViewToShowPath(path) {
+            if (!path || path.length === 0) return;
+            var bounds = new kakao.maps.LatLngBounds();
+            for (var i = 0; i < path.length; i++) {
+                var pt = path[i];
+                var latLng = (pt && pt.getLat) ? pt : new kakao.maps.LatLng(pt[0], pt[1]);
+                bounds.extend(latLng);
+            }
+            if (bounds.isEmpty()) return;
+            var sw = bounds.getSouthWest();
+            var ne = bounds.getNorthEast();
+            if (sw && ne) {
+                var pad = 0.15;
+                var latSpan = Math.max(ne.getLat() - sw.getLat(), 0.002);
+                var lngSpan = Math.max(ne.getLng() - sw.getLng(), 0.002);
+                bounds.extend(new kakao.maps.LatLng(sw.getLat() - latSpan * pad, sw.getLng() - lngSpan * pad));
+                bounds.extend(new kakao.maps.LatLng(ne.getLat() + latSpan * pad, ne.getLng() + lngSpan * pad));
+            }
+            map.setBounds(bounds);
+        }
+
         // 벌금 안내 문구 (불법 주차 단속 기준)
         var FINE_INFO = '불법 주차 과태료: 40,000원 (승차자 하차 후 즉시 출발 20,000원). 장애인 전용 주차구역 위반 등 추가 과태료가 부과될 수 있습니다.';
 
@@ -803,8 +825,11 @@
                 routeLine.setMap(map);
                 lastRouteDurationSeconds = data.duration_seconds;
                 if (currentMenu === 'route') renderRouteGuidePanel();
+                // 파란 경로 전체가 보이도록 지도 확대/축소 조정
+                setMapViewToShowPath(path);
             }).catch(function() {
-                // 실패 시 이미 그린 직선 경로 유지
+                // 실패 시 이미 그린 직선 경로 유지, 직선 경로 기준으로 뷰 조정
+                setMapViewToShowPath([[startLat, startLng], [endLat, endLng]]);
             });
         }
 
