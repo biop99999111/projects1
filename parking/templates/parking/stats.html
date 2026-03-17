@@ -19,11 +19,14 @@
         .stat-val { font-size: 24px; font-weight: bold; color: var(--accent); }
         .legend { font-size: 12px; color: #666; display: flex; gap: 10px; margin-bottom: 10px; }
         .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+        .btn-back { display: inline-block; margin-bottom: 16px; padding: 8px 14px; background: #4e73df; color: #fff; text-decoration: none; border-radius: 8px; font-size: 14px; }
+        .btn-back:hover { background: #3d5fc9; color: #fff; }
     </style>
 </head>
 <body>
 
 <div class="sidebar">
+    <a href="{% url 'map' %}" class="btn-back" title="메인으로">← 뒤로가기</a>
     <h2>📊 통합 관제 리포트</h2>
 
     <div class="card">
