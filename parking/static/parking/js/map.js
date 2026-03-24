@@ -5,6 +5,7 @@
         };
         var map = new kakao.maps.Map(mapContainer, options);
 
+
         // 캐시 프리웜: 페이지 로드 후 한 번 호출해 서버 캐시를 채워 두어 첫 클릭 시 응답이 빨라지도록 함
         fetch('/api/check-location/?lat=37.6584&lng=126.8320').catch(function() {});
 
@@ -401,9 +402,13 @@
             }
         }
 
+        // ==========================
+        // 20260320_양희찬: 요금 계산 + 포트원 결제 통합
+        // ==========================
         function renderFeeCalculatorPanel() {
             var nav = document.getElementById('nav-content');
             if (currentMenu !== 'fee') return;
+
             var html = '<div class="nav-title" style="color:#1976d2;">💰 공영주차장 요금 계산기</div>';
 
             if (!currentSelectedParking) {
@@ -427,58 +432,20 @@
             html += '<label>입차 시각';
             html += '  <input id="fee-start" type="datetime-local" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid #ced4da;border-radius:4px;box-sizing:border-box;">';
             html += '  <button type="button" id="fee-start-open" style="margin-top:4px;padding:4px 6px;font-size:11px;border:1px solid #ced4da;border-radius:4px;background:#f8f9fa;cursor:pointer;">오전/오후 시간 선택</button>';
-            html += '  <div id="fee-start-times" style="display:none;margin-top:4px;border:1px solid #dee2e6;border-radius:4px;background:#fff;max-height:180px;overflow-y:auto;padding:4px 0;box-shadow:0 2px 6px rgba(0,0,0,0.12);">';
-            html += '    <div style="padding:4px 8px;font-weight:bold;color:#495057;">오전</div>';
-            for (var h = 0; h < 12; h++) {
-                var labelH = h === 0 ? 12 : h;
-                var hh = (h < 10 ? '0' : '') + h;
-                ['00', '30'].forEach(function(mm) {
-                    html += '<div class="time-option" data-hour="' + hh + '" data-minute="' + mm + '" style="padding:2px 12px;cursor:pointer;font-size:11px;">' +
-                            '오전 ' + labelH + ':' + mm + '</div>';
-                });
-            }
-            html += '    <div style="padding:4px 8px;font-weight:bold;color:#495057;border-top:1px solid #f1f3f5;margin-top:4px;">오후</div>';
-            for (var h2 = 12; h2 < 24; h2++) {
-                var labelH2 = h2 === 12 ? 12 : h2 - 12;
-                var hh2 = (h2 < 10 ? '0' : '') + h2;
-                ['00', '30'].forEach(function(mm) {
-                    html += '<div class="time-option" data-hour="' + hh2 + '" data-minute="' + mm + '" style="padding:2px 12px;cursor:pointer;font-size:11px;">' +
-                            '오후 ' + labelH2 + ':' + mm + '</div>';
-                });
-            }
-            html += '  </div>';
             html += '</label>';
 
             html += '<label>출차 시각';
             html += '  <input id="fee-end" type="datetime-local" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid #ced4da;border-radius:4px;box-sizing:border-box;">';
             html += '  <button type="button" id="fee-end-open" style="margin-top:4px;padding:4px 6px;font-size:11px;border:1px solid #ced4da;border-radius:4px;background:#f8f9fa;cursor:pointer;">오전/오후 시간 선택</button>';
-            html += '  <div id="fee-end-times" style="display:none;margin-top:4px;border:1px solid #dee2e6;border-radius:4px;background:#fff;max-height:180px;overflow-y:auto;padding:4px 0;box-shadow:0 2px 6px rgba(0,0,0,0.12);">';
-            html += '    <div style="padding:4px 8px;font-weight:bold;color:#495057;">오전</div>';
-            for (var h3 = 0; h3 < 12; h3++) {
-                var labelH3 = h3 === 0 ? 12 : h3;
-                var hh3 = (h3 < 10 ? '0' : '') + h3;
-                ['00', '30'].forEach(function(mm) {
-                    html += '<div class="time-option" data-hour="' + hh3 + '" data-minute="' + mm + '" style="padding:2px 12px;cursor:pointer;font-size:11px;">' +
-                            '오전 ' + labelH3 + ':' + mm + '</div>';
-                });
-            }
-            html += '    <div style="padding:4px 8px;font-weight:bold;color:#495057;border-top:1px solid #f1f3f5;margin-top:4px;">오후</div>';
-            for (var h4 = 12; h4 < 24; h4++) {
-                var labelH4 = h4 === 12 ? 12 : h4 - 12;
-                var hh4 = (h4 < 10 ? '0' : '') + h4;
-                ['00', '30'].forEach(function(mm) {
-                    html += '<div class="time-option" data-hour="' + hh4 + '" data-minute="' + mm + '" style="padding:2px 12px;cursor:pointer;font-size:11px;">' +
-                            '오후 ' + labelH4 + ':' + mm + '</div>';
-                });
-            }
-            html += '  </div>';
             html += '</label>';
+
             html += '<label style="display:flex;align-items:center;gap:6px;margin-top:4px;">';
             html += '<input id="fee-eco" type="checkbox"> 친환경 차량 (50% 할인)';
             html += '</label>';
+
             html += '<button id="fee-calc-btn" type="button" style="margin-top:6px;padding:6px 8px;font-size:12px;border:none;border-radius:4px;background:#1976d2;color:#fff;cursor:pointer;">요금 계산</button>';
-            html += '</div>';
-            html += '</div>';
+            html += '<button id="fee-pay-btn" type="button" style="margin-top:6px;padding:6px 8px;font-size:12px;border:none;border-radius:4px;background:#28a745;color:#fff;cursor:pointer;">결제하기</button>';
+            html += '</div></div>';
 
             html += '<div class="nav-section">';
             html += '<div class="nav-label">예상 요금</div>';
@@ -487,41 +454,10 @@
 
             nav.innerHTML = html;
 
-            function initTimePicker(inputId, panelId, openBtnId) {
-                var input = document.getElementById(inputId);
-                var panel = document.getElementById(panelId);
-                var openBtn = document.getElementById(openBtnId);
-                if (!input || !panel || !openBtn) return;
-
-                openBtn.addEventListener('click', function () {
-                    panel.style.display = panel.style.display === 'none' || panel.style.display === '' ? 'block' : 'none';
-                });
-
-                panel.querySelectorAll('.time-option').forEach(function (item) {
-                    item.addEventListener('click', function () {
-                        var h = this.getAttribute('data-hour');
-                        var m = this.getAttribute('data-minute');
-                        var base = input.value || new Date().toISOString().slice(0, 16);
-                        var datePart = base.slice(0, 11); // YYYY-MM-DDT
-                        input.value = datePart + h + ':' + m;
-                        panel.style.display = 'none'; // 선택 후 창 닫기
-                        input.dispatchEvent(new Event('change'));
-                    });
-                });
-
-                document.addEventListener('click', function (e) {
-                    if (!panel.contains(e.target) && e.target !== openBtn) {
-                        panel.style.display = 'none';
-                    }
-                });
-            }
-
-            initTimePicker('fee-start', 'fee-start-times', 'fee-start-open');
-            initTimePicker('fee-end', 'fee-end-times', 'fee-end-open');
-
-            var btn = document.getElementById('fee-calc-btn');
-            if (btn) {
-                btn.addEventListener('click', function () {
+            // --- 요금 계산 버튼 이벤트 (20260320_양희찬) ---
+            var calcBtn = document.getElementById('fee-calc-btn');
+            if (calcBtn) {
+                calcBtn.addEventListener('click', function () {
                     var startVal = document.getElementById('fee-start').value;
                     var endVal = document.getElementById('fee-end').value;
                     var eco = document.getElementById('fee-eco').checked;
@@ -532,6 +468,7 @@
                         out.style.color = '#c00';
                         return;
                     }
+
                     var start = new Date(startVal);
                     var end = new Date(endVal);
                     if (!(start.getTime()) || !(end.getTime()) || end <= start) {
@@ -539,8 +476,8 @@
                         out.style.color = '#c00';
                         return;
                     }
-                    var minutes = Math.ceil((end - start) / 60000); // 분 단위
 
+                    var minutes = Math.ceil((end - start) / 60000);
                     var baseMin = parseInt(p.base_minutes, 10);
                     var baseFee = parseInt(p.base_fee, 10);
                     var extraMin = parseInt(p.extra_unit_minutes, 10);
@@ -552,30 +489,59 @@
                         return;
                     }
 
-                    var total = 0;
-                    if (minutes <= baseMin) {
-                        total = baseFee;
-                    } else {
-                        total = baseFee;
-                        var remain = minutes - baseMin;
-                        var units = Math.ceil(remain / extraMin);
-                        total += units * extraFee;
-                    }
-
-                    var original = total;
-                    if (eco) {
-                        total = Math.round(total * 0.5);
-                    }
+                    var total = minutes <= baseMin ? baseFee : baseFee + Math.ceil((minutes - baseMin) / extraMin) * extraFee;
+                    if (eco) total = Math.round(total * 0.5);
 
                     var nf = new Intl.NumberFormat('ko-KR');
-                    var text = '총 이용 시간: 약 ' + minutes + '분\n';
-                    text += '기본 요금 체계 기준 예상 요금: ' + nf.format(original) + '원';
-                    if (eco) {
-                        text += '\n친환경 차량 50% 할인 적용 요금: ' + nf.format(total) + '원';
-                    }
-                    out.textContent = text;
+                    out.textContent = '총 이용 시간: 약 ' + minutes + '분\n기본 요금 체계 기준 예상 요금: ' + nf.format(total) + '원' + (eco ? '\n친환경 차량 50% 할인 적용 요금: ' + nf.format(total) + '원' : '');
                     out.style.whiteSpace = 'pre-line';
                     out.style.color = '#212529';
+                });
+            }
+
+            // --- 포트원 결제 버튼 이벤트 (20260320_양희찬) ---
+            var payBtn = document.getElementById('fee-pay-btn');
+            if (payBtn) {
+                payBtn.addEventListener('click', function () {
+                    var IMP = window.IMP;
+                    IMP.init('imp04216675'); // 가맹점 코드 (테스트)
+
+                    var amountText = document.getElementById('fee-result').textContent.match(/([\d,]+)원/);
+                    var amount = amountText ? parseInt(amountText[1].replace(/,/g, '')) : 0;
+
+                    IMP.request_pay({
+                        pg: 'kakaopay',
+                        channel_key: 'channel-key-ed50abae-4837-4115-b43c-8ee299767d85',
+                        pay_method: 'card',
+                        merchant_uid: 'mid_' + new Date().getTime(),
+                        name: '주차 요금',
+                        amount: amount,
+                        buyer_name: '테스트 유저',
+                        buyer_tel: '01012345678',
+                        buyer_email: 'test@example.com'
+                    }, function (rsp) {
+
+                        if (rsp.success) {
+                            alert('결제 성공! 결제 ID: ' + rsp.imp_uid);
+
+                            // 🔥 여기 추가 (핵심)
+                            fetch('/payment/complete/', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    imp_uid: rsp.imp_uid,
+                                    merchant_uid: rsp.merchant_uid,
+                                    amount: rsp.paid_amount
+                                })
+                            });
+
+                        } else {
+                            alert('결제 실패: ' + rsp.error_msg);
+                        }
+
+                    });
                 });
             }
         }

@@ -3,7 +3,7 @@
             if (currentMenu !== 'route') return;
             var html = '<div class="nav-title" style="color:#1976d2;">🕒 실시간 예상 시간</div>';
             if (!lastRouteParking) {
-                html += '<div class="empty-state">주차장을 선택하면 실시간 이동 예상시간이 여기에 표시됩니다.</div>';
+                html += '<div class="empty-state">주차장을 선택하면 실시간 이동 예상시간이 여기에 표시됩니다!!</div>';
             } else {
                 html += '<div class="detail-card">';
                 html += '<div class="detail-head">' + (lastRouteParking.name || '공영주차장') + '</div>';
