@@ -1,7 +1,7 @@
         function renderFeeCalculatorPanel() {
             var nav = document.getElementById('nav-content');
             if (currentMenu !== 'fee') return;
-            var html = '<div class="nav-title" style="color:#1976d2;">💰 주차요금 계산기</div>';
+            var html = '<div class="nav-title" style="color:#1976d2;">💰 공영주차장 요금 계산기</div>';
 
             if (!currentSelectedParking) {
                 html += '<div class="empty-state">요금을 계산할 주차장을 먼저 선택해 주세요.<br>지도에서 위치를 클릭해 근처 주차장을 선택하거나, 주차장 리스트에서 하나를 선택하면 됩니다.</div>';
