@@ -74,7 +74,6 @@
             html += '<input id="fee-eco" type="checkbox"> 친환경 차량 (50% 할인)';
             html += '</label>';
             html += '<button id="fee-calc-btn" type="button" style="margin-top:6px;padding:6px 8px;font-size:12px;border:none;border-radius:4px;background:#1976d2;color:#fff;cursor:pointer;">요금 계산</button>';
-            html += '<button id="fee-pay-btn" type="button" style="background:#28a745;color:#fff;margin-top:4px;">결제하기</button>';
             html += '</div>';
             html += '</div>';
 

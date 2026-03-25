@@ -11,3 +11,6 @@ wheels/
 
 # API 디스크 캐시 (재시작 시 빠른 로드용)
 .cache/
+
+# 로컬 DB
+db.sqlite3

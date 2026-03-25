@@ -8,14 +8,6 @@ from django.views.decorators.csrf import csrf_exempt
 from .data_loader import check_enforcement, get_nearby_parking, get_all_parking_simple, get_cctv_rows
 from .models import Report
 
-from django.shortcuts import render
-import json
-
-from django.db.models import Count
-from django.db.models.functions import TruncDate
-from .models import Report
-import json
-
 
 def goyang_stats_view(request):
     api_data = get_cctv_rows()
@@ -286,45 +278,3 @@ def api_report_delete(request, report_id):
         return JsonResponse({'error': '비밀번호가 일치하지 않습니다.'}, status=403)
     r.delete()
     return JsonResponse({'ok': True}, json_dumps_params={'ensure_ascii': False})
-
-
-# --------- 결제관련 import ---------
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-import json
-from .models import Payment
-
-# --------- 결제 완료 뷰 ---------
-@csrf_exempt
-def payment_complete(request):
-    if request.method == 'POST':
-        data = json.loads(request.body)
-
-        imp_uid = data.get('imp_uid')
-        merchant_uid = data.get('merchant_uid')
-        amount = data.get('amount')
-
-        print("결제 정보:", imp_uid, merchant_uid, amount)
-
-        return JsonResponse({'status': 'ok'})
-
-# --------- 카카오페이 콜백 뷰 ---------
-@csrf_exempt
-def kakao_payment_callback(request):
-    if request.method == 'POST':
-        data = json.loads(request.body)  # 카카오페이에서 보내는 JSON 데이터
-        order_id = data.get('order_id')  # 실제 PG 테스트용 키 확인 필요
-        amount = data.get('amount')
-        status = data.get('status')
-        method = data.get('method', 'kakao')
-
-        # Payment 테이블에 저장
-        Payment.objects.create(
-            order_id=order_id,
-            amount=amount,
-            status=status,
-            method=method
-        )
-
-        return JsonResponse({'result': 'success'})
-    return JsonResponse({'result': 'error', 'message': 'Invalid method'})

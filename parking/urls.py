@@ -13,7 +13,4 @@ urlpatterns = [
     path('api/reports/<int:report_id>/delete/', views.api_report_delete, name='api_report_delete'),
 
     path('stats/', views.goyang_stats_view, name='goyang_stats'),
-
-    path('payment/complete/', views.payment_complete),
-    path('payment/callback/', views.kakao_payment_callback, name='kakao_payment_callback'),
 ]
